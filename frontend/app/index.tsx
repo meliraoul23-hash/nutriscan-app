@@ -848,6 +848,7 @@ export default function NutriScanApp() {
                 <TextInput
                   style={styles.input}
                   placeholder="Ex: Jean Dupont"
+                  placeholderTextColor="#999999"
                   value={authName}
                   onChangeText={setAuthName}
                   autoCapitalize="words"
@@ -859,6 +860,7 @@ export default function NutriScanApp() {
             <TextInput
               style={styles.input}
               placeholder="Ex: jean@exemple.com"
+              placeholderTextColor="#999999"
               value={authEmail}
               onChangeText={setAuthEmail}
               keyboardType="email-address"
@@ -869,6 +871,7 @@ export default function NutriScanApp() {
             <TextInput
               style={styles.input}
               placeholder="Minimum 6 caractères"
+              placeholderTextColor="#999999"
               value={authPassword}
               onChangeText={setAuthPassword}
               secureTextEntry
