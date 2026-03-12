@@ -408,12 +408,13 @@ export default function NutriScanApp() {
     setIsFetching(true);
     setProduct(null);
     setAlternatives([]);
+    setGoalAlerts([]);
     setProductLoading(true);
     setCurrentScreen('product');
     
     try {
       console.log('Making API request...');
-      const response = await axios.get(`${API_URL}/product/${barcode}`, { timeout: 15000 });
+      const response = await axios.get(`${API_URL}/product/${barcode}`, { timeout: 20000 });
       console.log('API response received');
       const productData = response.data;
       console.log('Product data found:', productData.found, 'score:', productData.health_score);
@@ -424,7 +425,13 @@ export default function NutriScanApp() {
       setIsFetching(false);
       console.log('States updated');
       
+      // Cache the product for offline use
       if (productData.found) {
+        cacheProduct(productData);
+        
+        // Check against health goals
+        checkProductGoals(barcode);
+        
         // Save to history in background (only once)
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         axios.post(`${API_URL}/history`, {
@@ -438,7 +445,7 @@ export default function NutriScanApp() {
 
         // Fetch alternatives in background if score is below 70
         if (productData.health_score < 70) {
-          axios.get(`${API_URL}/alternatives/${barcode}`)
+          axios.get(`${API_URL}/alternatives/${barcode}`, { timeout: 10000 })
             .then(altResponse => setAlternatives(altResponse.data || []))
             .catch(() => setAlternatives([]));
         }
@@ -449,10 +456,19 @@ export default function NutriScanApp() {
       
     } catch (error: any) {
       console.log('Error fetching product:', error?.message || error);
-      setProduct(null);
-      setProductLoading(false);
-      setIsFetching(false);
-      setCurrentScreen('main');
+      
+      // Try to use cached version if available
+      if (cachedProducts[barcode]) {
+        console.log('Using cached product data');
+        setProduct(cachedProducts[barcode]);
+        setProductLoading(false);
+        setIsFetching(false);
+      } else {
+        // Show error state
+        setProduct({ found: false, barcode, name: 'Erreur de connexion', error: true });
+        setProductLoading(false);
+        setIsFetching(false);
+      }
     }
   };
 
@@ -497,6 +513,7 @@ export default function NutriScanApp() {
   // Navigation
   const openScanner = () => {
     setScanned(false);
+    setIsFetching(false); // Reset fetching state when opening scanner
     setCurrentScreen('scanner');
   };
 
@@ -505,6 +522,7 @@ export default function NutriScanApp() {
     setProduct(null);
     setAlternatives([]);
     setScanned(false);
+    setIsFetching(false); // Reset fetching state when going home
   };
 
   // Additive Modal
