@@ -843,39 +843,52 @@ export default function NutriScanApp() {
 
           <View style={styles.authForm}>
             {!isLogin && (
-              <>
-                <Text style={styles.inputLabel}>Nom complet <Text style={styles.required}>*</Text></Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Ex: Jean Dupont"
-                  placeholderTextColor="#999999"
-                  value={authName}
-                  onChangeText={setAuthName}
-                  autoCapitalize="words"
-                />
-              </>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabelBig}>👤 Votre nom complet</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.inputWithIcon}
+                    placeholder="Entrez votre nom (ex: Jean Dupont)"
+                    placeholderTextColor="#888888"
+                    value={authName}
+                    onChangeText={setAuthName}
+                    autoCapitalize="words"
+                  />
+                </View>
+              </View>
             )}
             
-            <Text style={styles.inputLabel}>Adresse email <Text style={styles.required}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: jean@exemple.com"
-              placeholderTextColor="#999999"
-              value={authEmail}
-              onChangeText={setAuthEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabelBig}>📧 Votre adresse email</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.inputWithIcon}
+                  placeholder="Entrez votre email (ex: jean@gmail.com)"
+                  placeholderTextColor="#888888"
+                  value={authEmail}
+                  onChangeText={setAuthEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
             
-            <Text style={styles.inputLabel}>Mot de passe <Text style={styles.required}>*</Text></Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Minimum 6 caractères"
-              placeholderTextColor="#999999"
-              value={authPassword}
-              onChangeText={setAuthPassword}
-              secureTextEntry
-            />
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabelBig}>🔒 Votre mot de passe</Text>
+              <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+                <TextInput
+                  style={styles.inputWithIcon}
+                  placeholder="Créez un mot de passe (min. 6 caractères)"
+                  placeholderTextColor="#888888"
+                  value={authPassword}
+                  onChangeText={setAuthPassword}
+                  secureTextEntry
+                />
+              </View>
+            </View>
 
             {authError && (
               <View style={styles.errorContainer}>
@@ -2128,8 +2141,16 @@ const styles = StyleSheet.create({
   authTitle: { fontSize: 28, fontWeight: '700', color: colors.text, marginTop: 16 },
   authSubtitle: { fontSize: 16, color: colors.textSecondary, marginTop: 8 },
   authForm: { width: '100%' },
-  input: { backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12 },
+  inputContainer: { marginBottom: 20 },
+  inputLabelBig: { fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 8 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, borderWidth: 2, borderColor: '#E0E0E0' },
+  inputIcon: { marginLeft: 14 },
+  inputWithIcon: { flex: 1, paddingHorizontal: 12, paddingVertical: 16, fontSize: 16, color: colors.text },
+  input: { backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, marginBottom: 12, borderWidth: 2, borderColor: '#E0E0E0' },
+  inputLabel: { fontSize: 14, fontWeight: '600', color: colors.text, marginBottom: 6 },
+  required: { color: colors.error },
   authButton: { backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginTop: 8 },
+  authButtonDisabled: { opacity: 0.7 },
   authButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 24 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.surface },
