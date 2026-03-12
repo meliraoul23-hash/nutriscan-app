@@ -211,6 +211,8 @@ export default function NutriScanApp() {
   const [showAdditiveModal, setShowAdditiveModal] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
+  const [authError, setAuthError] = useState<string | null>(null);
+
   // Auth functions
   const loadAuthState = async () => {
     try {
@@ -229,6 +231,7 @@ export default function NutriScanApp() {
 
   const login = async (email: string, password: string) => {
     setLoading(true);
+    setAuthError(null);
     try {
       const response = await axios.post(`${API_URL}/auth/login`, { email, password });
       const { token: newToken, user: newUser } = response.data;
@@ -238,7 +241,9 @@ export default function NutriScanApp() {
       setUser(newUser);
       setCurrentScreen('main');
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.detail || 'Connexion échouée');
+      const message = error.response?.data?.detail || 'Connexion échouée';
+      setAuthError(message);
+      console.log('Login error:', message);
     } finally {
       setLoading(false);
     }
@@ -246,8 +251,11 @@ export default function NutriScanApp() {
 
   const register = async (email: string, password: string, name: string) => {
     setLoading(true);
+    setAuthError(null);
     try {
+      console.log('Registering:', email, name);
       const response = await axios.post(`${API_URL}/auth/register`, { email, password, name });
+      console.log('Registration response:', response.data);
       const { token: newToken, user: newUser } = response.data;
       await AsyncStorage.setItem('auth_token', newToken);
       await AsyncStorage.setItem('auth_user', JSON.stringify(newUser));
@@ -255,7 +263,9 @@ export default function NutriScanApp() {
       setUser(newUser);
       setCurrentScreen('main');
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.detail || 'Inscription échouée');
+      const message = error.response?.data?.detail || 'Inscription échouée';
+      setAuthError(message);
+      console.log('Register error:', message);
     } finally {
       setLoading(false);
     }
@@ -439,13 +449,14 @@ export default function NutriScanApp() {
     }
   };
 
+  // Auth form state
+  const [isLogin, setIsLogin] = useState(true);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+
   // Auth Screen
   const renderAuthScreen = () => {
-    const [isLogin, setIsLogin] = useState(true);
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
-
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
         <ScrollView contentContainerStyle={styles.authContainer}>
@@ -463,30 +474,40 @@ export default function NutriScanApp() {
               <TextInput
                 style={styles.input}
                 placeholder="Nom complet"
-                value={name}
-                onChangeText={setName}
+                value={authName}
+                onChangeText={setAuthName}
                 autoCapitalize="words"
               />
             )}
             <TextInput
               style={styles.input}
               placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
+              value={authEmail}
+              onChangeText={setAuthEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
             <TextInput
               style={styles.input}
               placeholder="Mot de passe"
-              value={password}
-              onChangeText={setPassword}
+              value={authPassword}
+              onChangeText={setAuthPassword}
               secureTextEntry
             />
 
+            {authError && (
+              <View style={styles.errorContainer}>
+                <Ionicons name="alert-circle" size={16} color={colors.error} />
+                <Text style={styles.errorText}>{authError}</Text>
+              </View>
+            )}
+
             <TouchableOpacity
               style={styles.authButton}
-              onPress={() => isLogin ? login(email, password) : register(email, password, name)}
+              onPress={() => {
+                setAuthError(null);
+                isLogin ? login(authEmail, authPassword) : register(authEmail, authPassword, authName);
+              }}
               disabled={loading}
             >
               {loading ? (
@@ -1313,6 +1334,8 @@ const styles = StyleSheet.create({
   googleButtonText: { color: '#FFF', fontSize: 16, fontWeight: '500', marginLeft: 8 },
   switchAuth: { alignItems: 'center', marginTop: 24 },
   switchAuthText: { color: colors.primary, fontSize: 14 },
+  errorContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFEBEE', padding: 12, borderRadius: 8, marginBottom: 12 },
+  errorText: { color: colors.error, fontSize: 14, marginLeft: 8, flex: 1 },
 
   // Scanner
   scannerContainer: { flex: 1, backgroundColor: '#000' },

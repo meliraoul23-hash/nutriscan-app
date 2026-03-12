@@ -269,15 +269,32 @@ def analyze_additives(product_data: dict) -> List[Dict[str, Any]]:
     return additives_info
 
 def extract_ingredients(product_data: dict) -> tuple:
-    ingredients_text = product_data.get('ingredients_text', '') or product_data.get('ingredients_text_fr', '') or ''
-    ingredients_list = []
+    # Prioritize French, then English ingredients text
+    ingredients_text = (
+        product_data.get('ingredients_text_fr', '') or 
+        product_data.get('ingredients_text_en', '') or 
+        product_data.get('ingredients_text', '') or ''
+    )
     
+    # If still not French/English, try to clean it
+    if ingredients_text and not any(c in ingredients_text.lower() for c in ['sucre', 'sugar', 'eau', 'water', 'sel', 'salt']):
+        # Try alternative fields
+        ingredients_text = product_data.get('ingredients_text_with_allergens_fr', '') or ingredients_text
+    
+    ingredients_list = []
     raw_ingredients = product_data.get('ingredients', [])
-    for ing in raw_ingredients[:20]:
+    
+    for ing in raw_ingredients[:15]:  # Limit to 15 for performance
+        # Get name in French or English
+        name = ing.get('text', '')
+        if not name:
+            ing_id = ing.get('id', '')
+            name = ing_id.replace('en:', '').replace('fr:', '').replace('-', ' ').title()
+        
         ingredients_list.append({
             'id': ing.get('id', ''),
-            'name': ing.get('text', ing.get('id', '').replace('en:', '').replace('fr:', '').replace('-', ' ').title()),
-            'percent': ing.get('percent_estimate', 0),
+            'name': name,
+            'percent': ing.get('percent_estimate', 0) or 0,
             'vegan': ing.get('vegan', 'unknown'),
             'vegetarian': ing.get('vegetarian', 'unknown'),
         })
@@ -636,31 +653,56 @@ async def clear_history(user: User = Depends(get_current_user)):
 
 # ============== SEARCH ROUTES ==============
 @api_router.get("/search")
-async def search_products(q: str, page: int = 1, page_size: int = 20):
-    """Search products in Open Food Facts database"""
+async def search_products(q: str, page: int = 1, page_size: int = 15):
+    """Search products in Open Food Facts database - optimized for speed"""
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
+            # Use world API with French language preference
             response = await client.get(
                 "https://world.openfoodfacts.org/cgi/search.pl",
-                params={'search_terms': q, 'search_simple': 1, 'action': 'process', 'page': page, 'page_size': page_size, 'json': 1}
+                params={
+                    'search_terms': q, 
+                    'search_simple': 1, 
+                    'action': 'process', 
+                    'page': page, 
+                    'page_size': page_size, 
+                    'json': 1,
+                    'fields': 'code,product_name,product_name_fr,product_name_en,brands,image_url,nutriscore_grade,nova_group'
+                }
             )
             data = response.json()
             
             products = []
             for p in data.get('products', []):
-                score = calculate_health_score(p)
+                # Prioritize French name, then English, then generic
+                name = p.get('product_name_fr') or p.get('product_name_en') or p.get('product_name') or ''
+                if not name:
+                    continue
+                
+                # Quick score calculation
+                nutri_map = {'a': 90, 'b': 75, 'c': 55, 'd': 35, 'e': 20}
+                nutri_grade = (p.get('nutriscore_grade') or 'c').lower()
+                score = nutri_map.get(nutri_grade, 50)
+                
+                nova = p.get('nova_group')
+                if nova == 4:
+                    score -= 15
+                elif nova == 1:
+                    score += 10
+                
                 products.append({
                     'barcode': p.get('code', ''),
-                    'name': p.get('product_name', 'Inconnu'),
+                    'name': name,
                     'brand': p.get('brands', ''),
                     'image_url': p.get('image_url', ''),
-                    'health_score': score,
-                    'nutri_score': p.get('nutriscore_grade', '').upper()
+                    'health_score': max(0, min(100, score)),
+                    'nutri_score': (p.get('nutriscore_grade') or '').upper()
                 })
             
             return {'products': products, 'count': data.get('count', 0), 'page': page, 'page_size': page_size}
     except Exception as e:
         logger.error(f"Search error: {str(e)}")
+        return {'products': [], 'count': 0, 'page': page, 'page_size': page_size}
         return {'products': [], 'count': 0, 'page': page, 'page_size': page_size}
 
 # ============== RANKINGS ROUTES ==============
