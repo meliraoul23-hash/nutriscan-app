@@ -258,6 +258,180 @@ backend:
         agent: "testing"
         comment: "✅ PASSED - User login working correctly. Validates credentials, returns JWT token and user object. Tested with registered user account."
 
+  - task: "GET /api/goals/types - Get available goal types (6 types)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented goals types endpoint returning 6 health goal categories"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Retrieved 6 goal types correctly: reduce_sugar, reduce_salt, reduce_fat, avoid_additives, increase_fiber, increase_protein"
+
+  - task: "POST /api/goals - Create new health goal (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented goal creation with goal_type parameter and authentication"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Created reduce_sugar goal with target value 25. Properly handles authentication and goal validation"
+
+  - task: "GET /api/goals - Get user's health goals (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented user goals retrieval with authentication"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Retrieved user goals correctly with proper structure including id, goal_type, target_value, current_progress, created_at"
+
+  - task: "DELETE /api/goals/{goal_id} - Delete a goal (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented goal deletion with authentication"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Goal deletion working correctly. Returns proper success message"
+
+  - task: "POST /api/goals/check-product/{barcode} - Check product against goals (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented product goal checking against user health goals"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Tested with Nutella (3017620422003). Product check completed: 1 alerts, 0 recommendations. Proper response structure with alerts and recommendations arrays"
+
+  - task: "POST /api/compare - Compare multiple products"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented product comparison feature for up to 4 products"
+      - working: false
+        agent: "testing"
+        comment: "❌ FAILED - Internal Server Error 500. TypeError: ord() expected a character, but string of length 7 found in nutri_score comparison logic"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - FIXED ObjectId serialization and nutri_score comparison logic. Compared 2 products (Nutella vs Coca-Cola) successfully. Returns proper comparison structure with products array and best/worst categories"
+
+  - task: "POST /api/favorites/{barcode} - Add to favorites (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented favorites system with MongoDB persistence"
+      - working: false
+        agent: "testing"
+        comment: "❌ FAILED - Internal Server Error 500. MongoDB ObjectId serialization issue in JSON response"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - FIXED ObjectId serialization by excluding _id field from MongoDB responses. Product successfully added to favorites"
+
+  - task: "GET /api/favorites - Get favorites (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented favorites retrieval with authentication"
+      - working: false
+        agent: "testing"
+        comment: "❌ FAILED - Internal Server Error 500. MongoDB ObjectId serialization issue"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - FIXED ObjectId serialization by adding {\"_id\": 0} projection to MongoDB query. Retrieved favorite products correctly with proper structure"
+
+  - task: "DELETE /api/favorites/{barcode} - Remove from favorites (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "low"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented favorite removal with authentication"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Favorite removal working correctly. Returns proper success message 'Retiré des favoris'"
+
+  - task: "POST /api/subscribe - Upgrade to premium (requires auth)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented premium subscription upgrade"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Premium subscription activated successfully. Updates user subscription_type to 'premium'"
+
+  - task: "GET /api/subscription-status - Check subscription status"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "NEW V2 ENDPOINT - Implemented subscription status check with feature list"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Subscription status retrieved correctly. Returns subscription type and available features list (8 features for premium users)"
+
 frontend:
   - task: "Home Screen with scan button and history"
     implemented: true
@@ -312,7 +486,7 @@ metadata:
 
 test_plan:
   current_focus:
-    - "All testing complete"
+    - "All NEW V2 backend endpoints tested successfully"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -326,3 +500,5 @@ agent_communication:
     message: "Fixed multiple issues: 1) Added healing food modal with full details (benefits, conditions, sources, disclaimer) 2) Improved barcode scan duplicate prevention with isFetching state 3) Added better scroll support for product details page 4) All placeholders visible on registration form. Please re-test backend endpoints and verify the new features work correctly."
   - agent: "testing"
     message: "✅ COMPREHENSIVE FRONTEND TESTING COMPLETE ON MOBILE (390x844) - All major features working correctly: 1) Home Screen: NutriScan logo with leaf icon, 'Scanner un produit' button, 'Scans récents' section with history items, and 'Aliments naturels bienfaisants' section with healing food cards all display properly 2) Healing Food Modal: CONFIRMED WORKING - Curcuma modal opens correctly showing title with emoji, Bienfaits section with tags (Anti-inflammatoire, Antioxydant, Digestion), 'Peut aider pour' section with conditions (Arthrite, Inflammation, Troubles digestifs), Source information (OMS, NIH), disclaimer text in French, and working close button 3) Navigation Tabs: All 5 tabs (Accueil, Historique, Recherche, Classement, Profil) are functional and load appropriate content 4) Search Feature: Search input accepts queries like 'chocolat' and processes them correctly 5) Authentication Forms: Both login and registration forms accessible with proper input fields and placeholders visible 6) Product Details: Page structure supports health scores, Nutri-Score/NOVA badges, pro tips, and smooth scrolling. Mobile-first responsive design working perfectly. All UI components render correctly and interact as expected. NO CRITICAL ISSUES FOUND."
+  - agent: "testing"
+    message: "✅ COMPREHENSIVE V2 BACKEND TESTING COMPLETE - Successfully tested all 12 NEW V2 endpoints: 1) Goals System (5 endpoints): GET /api/goals/types (6 goal types), POST /api/goals (create goal), GET /api/goals (retrieve user goals), DELETE /api/goals/{id} (delete goal), POST /api/goals/check-product/{barcode} (check product against goals) - all working correctly with authentication 2) Product Comparison: POST /api/compare - FIXED ObjectId and nutri_score comparison issues, now successfully compares multiple products (tested Nutella vs Coca-Cola) 3) Favorites System (3 endpoints): POST/GET/DELETE /api/favorites - FIXED MongoDB ObjectId serialization issues by excluding _id fields, all working correctly 4) Premium Subscription (2 endpoints): POST /api/subscribe (upgrade to premium), GET /api/subscription-status (check status and features) - both working correctly. MINOR FIXES APPLIED: Fixed MongoDB ObjectId JSON serialization by adding projection filters and excluded _id from responses. Fixed nutri_score comparison logic to handle first character only. All V2 features fully functional and ready for production use."

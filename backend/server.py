@@ -906,6 +906,246 @@ async def get_subscription_status(user: User = Depends(get_current_user)):
     
     return {"subscription_type": user.subscription_type, "features": features}
 
+# ============== HEALTH GOALS ==============
+class HealthGoal(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    goal_type: str  # "reduce_sugar", "reduce_salt", "reduce_fat", "avoid_additives", "increase_fiber", "increase_protein"
+    target_value: float = 0
+    current_progress: float = 0
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    is_active: bool = True
+
+GOAL_TYPES = {
+    "reduce_sugar": {"name": "Réduire le sucre", "unit": "g", "icon": "cube", "description": "Limiter les sucres ajoutés à moins de 25g/jour"},
+    "reduce_salt": {"name": "Réduire le sel", "unit": "g", "icon": "water", "description": "Limiter le sel à moins de 5g/jour"},
+    "reduce_fat": {"name": "Réduire les graisses saturées", "unit": "g", "icon": "heart", "description": "Limiter les graisses saturées à moins de 20g/jour"},
+    "avoid_additives": {"name": "Éviter les additifs à risque", "unit": "additifs", "icon": "flask", "description": "Éviter les additifs E250, E621, E951..."},
+    "increase_fiber": {"name": "Augmenter les fibres", "unit": "g", "icon": "leaf", "description": "Consommer au moins 25g de fibres/jour"},
+    "increase_protein": {"name": "Augmenter les protéines", "unit": "g", "icon": "fitness", "description": "Consommer au moins 50g de protéines/jour"},
+}
+
+@api_router.get("/goals/types")
+async def get_goal_types():
+    """Get available health goal types"""
+    return GOAL_TYPES
+
+@api_router.get("/goals")
+async def get_user_goals(user: User = Depends(get_current_user)):
+    """Get user's health goals"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    goals = await db.health_goals.find({"user_id": user.user_id, "is_active": True}).to_list(10)
+    return [{"id": g.get("id"), "goal_type": g.get("goal_type"), "target_value": g.get("target_value"), 
+             "current_progress": g.get("current_progress"), "created_at": g.get("created_at"),
+             **GOAL_TYPES.get(g.get("goal_type"), {})} for g in goals]
+
+@api_router.post("/goals")
+async def create_goal(goal_type: str, target_value: float = 0, user: User = Depends(get_current_user)):
+    """Create a new health goal"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    if goal_type not in GOAL_TYPES:
+        raise HTTPException(status_code=400, detail="Type d'objectif invalide")
+    
+    # Check if goal already exists
+    existing = await db.health_goals.find_one({"user_id": user.user_id, "goal_type": goal_type, "is_active": True})
+    if existing:
+        raise HTTPException(status_code=400, detail="Cet objectif existe déjà")
+    
+    goal = HealthGoal(user_id=user.user_id, goal_type=goal_type, target_value=target_value)
+    await db.health_goals.insert_one(goal.model_dump())
+    
+    return {"message": "Objectif créé", "goal": {**goal.model_dump(), **GOAL_TYPES.get(goal_type, {})}}
+
+@api_router.delete("/goals/{goal_id}")
+async def delete_goal(goal_id: str, user: User = Depends(get_current_user)):
+    """Delete a health goal"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    result = await db.health_goals.update_one(
+        {"id": goal_id, "user_id": user.user_id},
+        {"$set": {"is_active": False}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Objectif non trouvé")
+    
+    return {"message": "Objectif supprimé"}
+
+@api_router.post("/goals/check-product/{barcode}")
+async def check_product_against_goals(barcode: str, user: User = Depends(get_current_user)):
+    """Check if a product aligns with user's health goals"""
+    if not user:
+        return {"alerts": [], "recommendations": []}
+    
+    goals = await db.health_goals.find({"user_id": user.user_id, "is_active": True}).to_list(10)
+    if not goals:
+        return {"alerts": [], "recommendations": []}
+    
+    # Fetch product
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json")
+            data = response.json()
+            if data.get('status') != 1:
+                return {"alerts": [], "recommendations": []}
+            
+            product = data.get('product', {})
+            nutrients = product.get('nutriments', {})
+            additives = product.get('additives_tags', [])
+            
+            alerts = []
+            recommendations = []
+            
+            for goal in goals:
+                goal_type = goal.get('goal_type')
+                
+                if goal_type == "reduce_sugar":
+                    sugars = nutrients.get('sugars_100g', 0) or 0
+                    if sugars > 10:
+                        alerts.append({"goal": "Réduire le sucre", "message": f"Ce produit contient {sugars}g de sucre/100g", "severity": "high" if sugars > 20 else "medium"})
+                
+                elif goal_type == "reduce_salt":
+                    salt = nutrients.get('salt_100g', 0) or 0
+                    if salt > 1:
+                        alerts.append({"goal": "Réduire le sel", "message": f"Ce produit contient {salt}g de sel/100g", "severity": "high" if salt > 1.5 else "medium"})
+                
+                elif goal_type == "reduce_fat":
+                    sat_fat = nutrients.get('saturated-fat_100g', 0) or 0
+                    if sat_fat > 5:
+                        alerts.append({"goal": "Réduire les graisses", "message": f"Ce produit contient {sat_fat}g de graisses saturées/100g", "severity": "high" if sat_fat > 10 else "medium"})
+                
+                elif goal_type == "avoid_additives":
+                    risky_additives = [a for a in additives if a.replace('en:', '').lower() in ['e250', 'e251', 'e252', 'e320', 'e321', 'e951', 'e171']]
+                    if risky_additives:
+                        alerts.append({"goal": "Éviter les additifs", "message": f"Contient des additifs à risque: {', '.join(risky_additives)}", "severity": "high"})
+                
+                elif goal_type == "increase_fiber":
+                    fiber = nutrients.get('fiber_100g', 0) or 0
+                    if fiber >= 5:
+                        recommendations.append({"goal": "Augmenter les fibres", "message": f"Bonne source de fibres ({fiber}g/100g)!", "positive": True})
+                
+                elif goal_type == "increase_protein":
+                    proteins = nutrients.get('proteins_100g', 0) or 0
+                    if proteins >= 10:
+                        recommendations.append({"goal": "Augmenter les protéines", "message": f"Riche en protéines ({proteins}g/100g)!", "positive": True})
+            
+            return {"alerts": alerts, "recommendations": recommendations}
+    except Exception as e:
+        logger.error(f"Goal check error: {str(e)}")
+        return {"alerts": [], "recommendations": []}
+
+# ============== PRODUCT COMPARISON ==============
+@api_router.post("/compare")
+async def compare_products(barcodes: List[str]):
+    """Compare multiple products side by side"""
+    if len(barcodes) < 2:
+        raise HTTPException(status_code=400, detail="Au moins 2 produits requis")
+    if len(barcodes) > 4:
+        raise HTTPException(status_code=400, detail="Maximum 4 produits")
+    
+    products = []
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for barcode in barcodes:
+            try:
+                response = await client.get(f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json")
+                data = response.json()
+                if data.get('status') == 1:
+                    p = data.get('product', {})
+                    health_score = calculate_health_score(p)
+                    nutrients = extract_nutrients(p)
+                    products.append({
+                        "barcode": barcode,
+                        "name": p.get('product_name', 'Inconnu'),
+                        "brand": p.get('brands', ''),
+                        "image_url": p.get('image_url', ''),
+                        "health_score": health_score,
+                        "nutri_score": p.get('nutriscore_grade', '').upper(),
+                        "nova_group": p.get('nova_group', 0) or 0,
+                        "nutrients": nutrients,
+                        "additives_count": len(p.get('additives_tags', [])),
+                    })
+            except:
+                pass
+    
+    if len(products) < 2:
+        raise HTTPException(status_code=404, detail="Impossible de récupérer les produits")
+    
+    # Determine winner for each category
+    comparison = {
+        "products": products,
+        "best_health_score": max(products, key=lambda x: x['health_score'])['barcode'],
+        "best_nutri_score": min(products, key=lambda x: ord(x['nutri_score'][0]) if x['nutri_score'] else ord('Z'))['barcode'],
+        "lowest_sugar": min(products, key=lambda x: x['nutrients'].get('sugars', 999))['barcode'],
+        "lowest_fat": min(products, key=lambda x: x['nutrients'].get('saturated_fat', 999))['barcode'],
+        "lowest_salt": min(products, key=lambda x: x['nutrients'].get('salt', 999))['barcode'],
+        "highest_fiber": max(products, key=lambda x: x['nutrients'].get('fiber', 0))['barcode'],
+        "highest_protein": max(products, key=lambda x: x['nutrients'].get('proteins', 0))['barcode'],
+    }
+    
+    return comparison
+
+# ============== FAVORITES ==============
+@api_router.get("/favorites")
+async def get_favorites(user: User = Depends(get_current_user)):
+    """Get user's favorite products"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    favorites = await db.favorites.find({"user_id": user.user_id}, {"_id": 0}).sort('created_at', -1).to_list(50)
+    return favorites
+
+@api_router.post("/favorites/{barcode}")
+async def add_favorite(barcode: str, user: User = Depends(get_current_user)):
+    """Add a product to favorites"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    existing = await db.favorites.find_one({"user_id": user.user_id, "barcode": barcode})
+    if existing:
+        return {"message": "Déjà en favoris"}
+    
+    # Fetch product info
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json")
+        data = response.json()
+        if data.get('status') != 1:
+            raise HTTPException(status_code=404, detail="Produit non trouvé")
+        
+        p = data.get('product', {})
+        favorite = {
+            "id": str(uuid.uuid4()),
+            "user_id": user.user_id,
+            "barcode": barcode,
+            "product_name": p.get('product_name', 'Inconnu'),
+            "brand": p.get('brands', ''),
+            "image_url": p.get('image_url', ''),
+            "health_score": calculate_health_score(p),
+            "nutri_score": p.get('nutriscore_grade', '').upper(),
+            "created_at": datetime.now(timezone.utc)
+        }
+        await db.favorites.insert_one(favorite)
+        # Return the favorite without any potential ObjectId issues
+        favorite_response = favorite.copy()
+        if "_id" in favorite_response:
+            del favorite_response["_id"]
+        return {"message": "Ajouté aux favoris", "favorite": favorite_response}
+
+@api_router.delete("/favorites/{barcode}")
+async def remove_favorite(barcode: str, user: User = Depends(get_current_user)):
+    """Remove a product from favorites"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    result = await db.favorites.delete_one({"user_id": user.user_id, "barcode": barcode})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Favori non trouvé")
+    
+    return {"message": "Retiré des favoris"}
+
 # Include router and middleware
 app.include_router(api_router)
 

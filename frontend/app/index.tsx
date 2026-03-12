@@ -191,7 +191,7 @@ export default function NutriScanApp() {
 
   // App state
   const [currentTab, setCurrentTab] = useState<'home' | 'history' | 'search' | 'rankings' | 'profile'>('home');
-  const [currentScreen, setCurrentScreen] = useState<'main' | 'scanner' | 'product' | 'auth'>('main');
+  const [currentScreen, setCurrentScreen] = useState<'main' | 'scanner' | 'product' | 'auth' | 'compare' | 'goals' | 'menu' | 'favorites'>('main');
   
   // Data state
   const [product, setProduct] = useState<Product | null>(null);
@@ -203,6 +203,19 @@ export default function NutriScanApp() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // NEW: Goals, Comparison, Favorites, Menu state
+  const [healthGoals, setHealthGoals] = useState<any[]>([]);
+  const [goalTypes, setGoalTypes] = useState<any>({});
+  const [favorites, setFavorites] = useState<any[]>([]);
+  const [weeklyMenu, setWeeklyMenu] = useState<any>(null);
+  const [menuLoading, setMenuLoading] = useState(false);
+  const [compareProducts, setCompareProducts] = useState<any[]>([]);
+  const [comparisonResult, setComparisonResult] = useState<any>(null);
+  const [goalAlerts, setGoalAlerts] = useState<any[]>([]);
+  
+  // Offline cache
+  const [cachedProducts, setCachedProducts] = useState<{[key: string]: Product}>({});
+  
   // UI state
   const [loading, setLoading] = useState(false);
   const [productLoading, setProductLoading] = useState(false);
@@ -212,6 +225,8 @@ export default function NutriScanApp() {
   const [showAdditiveModal, setShowAdditiveModal] = useState(false);
   const [selectedHealingFood, setSelectedHealingFood] = useState<HealingFood | null>(null);
   const [showHealingFoodModal, setShowHealingFoodModal] = useState(false);
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
   const [authError, setAuthError] = useState<string | null>(null);
@@ -503,6 +518,270 @@ export default function NutriScanApp() {
       setShowAdditiveModal(true);
     }
   };
+
+  // ============== NEW FEATURES ==============
+
+  // Fetch Health Goals
+  const fetchGoals = async () => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const [goalsRes, typesRes] = await Promise.all([
+        axios.get(`${API_URL}/goals`, { headers }),
+        axios.get(`${API_URL}/goals/types`)
+      ]);
+      setHealthGoals(goalsRes.data);
+      setGoalTypes(typesRes.data);
+    } catch (error) {
+      console.log('Error fetching goals:', error);
+    }
+  };
+
+  // Create Goal
+  const createGoal = async (goalType: string) => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.post(`${API_URL}/goals?goal_type=${goalType}&target_value=0`, {}, { headers });
+      fetchGoals();
+      setShowGoalModal(false);
+      Alert.alert('Succès', 'Objectif créé !');
+    } catch (error: any) {
+      Alert.alert('Erreur', error.response?.data?.detail || 'Impossible de créer l\'objectif');
+    }
+  };
+
+  // Delete Goal
+  const deleteGoal = async (goalId: string) => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.delete(`${API_URL}/goals/${goalId}`, { headers });
+      fetchGoals();
+    } catch (error) {
+      console.log('Error deleting goal:', error);
+    }
+  };
+
+  // Check product against goals
+  const checkProductGoals = async (barcode: string) => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const response = await axios.post(`${API_URL}/goals/check-product/${barcode}`, {}, { headers });
+      setGoalAlerts(response.data.alerts || []);
+    } catch (error) {
+      console.log('Error checking goals:', error);
+    }
+  };
+
+  // Fetch Favorites
+  const fetchFavorites = async () => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const response = await axios.get(`${API_URL}/favorites`, { headers });
+      setFavorites(response.data);
+    } catch (error) {
+      console.log('Error fetching favorites:', error);
+    }
+  };
+
+  // Add to Favorites
+  const addToFavorites = async (barcode: string) => {
+    if (!user || !token) {
+      Alert.alert('Connexion requise', 'Connectez-vous pour ajouter aux favoris');
+      return;
+    }
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.post(`${API_URL}/favorites/${barcode}`, {}, { headers });
+      fetchFavorites();
+      Alert.alert('Succès', 'Ajouté aux favoris !');
+    } catch (error: any) {
+      Alert.alert('Info', error.response?.data?.message || 'Déjà en favoris');
+    }
+  };
+
+  // Remove from Favorites
+  const removeFromFavorites = async (barcode: string) => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.delete(`${API_URL}/favorites/${barcode}`, { headers });
+      fetchFavorites();
+    } catch (error) {
+      console.log('Error removing favorite:', error);
+    }
+  };
+
+  // Check if product is favorite
+  const isFavorite = (barcode: string) => {
+    return favorites.some(f => f.barcode === barcode);
+  };
+
+  // Generate Weekly Menu (Premium)
+  const generateMenu = async () => {
+    if (!user || !token) {
+      Alert.alert('Connexion requise', 'Connectez-vous pour générer un menu');
+      return;
+    }
+    if (user.subscription_type !== 'premium') {
+      Alert.alert('Premium requis', 'Cette fonctionnalité est réservée aux membres Premium');
+      return;
+    }
+    setMenuLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const response = await axios.post(`${API_URL}/generate-menu`, {}, { headers });
+      setWeeklyMenu(response.data);
+      setCurrentScreen('menu');
+    } catch (error: any) {
+      Alert.alert('Erreur', error.response?.data?.detail || 'Impossible de générer le menu');
+    } finally {
+      setMenuLoading(false);
+    }
+  };
+
+  // Fetch existing menus
+  const fetchMenus = async () => {
+    if (!user || !token) return;
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      const response = await axios.get(`${API_URL}/my-menus`, { headers });
+      if (response.data.length > 0) {
+        setWeeklyMenu(response.data[0].menu_data);
+      }
+    } catch (error) {
+      console.log('Error fetching menus:', error);
+    }
+  };
+
+  // Compare Products
+  const addToComparison = (productData: any) => {
+    if (compareProducts.length >= 4) {
+      Alert.alert('Maximum atteint', 'Vous pouvez comparer jusqu\'à 4 produits');
+      return;
+    }
+    if (compareProducts.some(p => p.barcode === productData.barcode)) {
+      Alert.alert('Info', 'Ce produit est déjà dans la comparaison');
+      return;
+    }
+    setCompareProducts([...compareProducts, productData]);
+  };
+
+  const removeFromComparison = (barcode: string) => {
+    setCompareProducts(compareProducts.filter(p => p.barcode !== barcode));
+    setComparisonResult(null);
+  };
+
+  const runComparison = async () => {
+    if (compareProducts.length < 2) {
+      Alert.alert('Minimum requis', 'Ajoutez au moins 2 produits pour comparer');
+      return;
+    }
+    setLoading(true);
+    try {
+      const barcodes = compareProducts.map(p => p.barcode);
+      const response = await axios.post(`${API_URL}/compare`, barcodes);
+      setComparisonResult(response.data);
+      setCurrentScreen('compare');
+    } catch (error: any) {
+      Alert.alert('Erreur', error.response?.data?.detail || 'Impossible de comparer');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Share Product
+  const shareProduct = async () => {
+    if (!product) return;
+    
+    const shareMessage = `🥗 NutriScan - ${product.name}\n\n` +
+      `📊 Score Santé: ${product.health_score}/100\n` +
+      `🔤 Nutri-Score: ${product.nutri_score}\n` +
+      `🏭 NOVA: ${product.nova_group}\n\n` +
+      `💡 ${product.pro_tip}\n\n` +
+      `Téléchargez NutriScan pour scanner vos produits !`;
+    
+    try {
+      if (Platform.OS === 'web') {
+        if (navigator.share) {
+          await navigator.share({
+            title: `NutriScan - ${product.name}`,
+            text: shareMessage,
+          });
+        } else {
+          // Fallback: copy to clipboard
+          await navigator.clipboard.writeText(shareMessage);
+          Alert.alert('Copié !', 'Le texte a été copié dans le presse-papier');
+        }
+      } else {
+        // Mobile sharing
+        const { Share } = await import('react-native');
+        await Share.share({
+          message: shareMessage,
+          title: `NutriScan - ${product.name}`,
+        });
+      }
+    } catch (error) {
+      console.log('Share error:', error);
+    }
+  };
+
+  // Upgrade to Premium
+  const upgradeToPremium = async () => {
+    if (!user || !token) {
+      setCurrentScreen('auth');
+      return;
+    }
+    try {
+      const headers = { Authorization: `Bearer ${token}` };
+      await axios.post(`${API_URL}/subscribe`, {}, { headers });
+      const updatedUser = { ...user, subscription_type: 'premium' };
+      setUser(updatedUser);
+      await AsyncStorage.setItem('auth_user', JSON.stringify(updatedUser));
+      Alert.alert('Félicitations !', 'Vous êtes maintenant membre Premium !');
+    } catch (error) {
+      Alert.alert('Erreur', 'Impossible d\'activer Premium');
+    }
+  };
+
+  // Cache product for offline
+  const cacheProduct = async (productData: Product) => {
+    try {
+      const newCache = { ...cachedProducts, [productData.barcode]: productData };
+      setCachedProducts(newCache);
+      await AsyncStorage.setItem('cached_products', JSON.stringify(newCache));
+    } catch (error) {
+      console.log('Cache error:', error);
+    }
+  };
+
+  // Load cached products
+  const loadCachedProducts = async () => {
+    try {
+      const cached = await AsyncStorage.getItem('cached_products');
+      if (cached) {
+        setCachedProducts(JSON.parse(cached));
+      }
+    } catch (error) {
+      console.log('Load cache error:', error);
+    }
+  };
+
+  // Update effects to load new data
+  useEffect(() => {
+    if (user && token) {
+      fetchGoals();
+      fetchFavorites();
+      fetchMenus();
+    }
+  }, [user, token]);
+
+  useEffect(() => {
+    loadCachedProducts();
+  }, []);
 
   // Auth form state
   const [isLogin, setIsLogin] = useState(true);
@@ -925,6 +1204,68 @@ export default function NutriScanApp() {
             </View>
           </View>
 
+          {/* Quick Actions */}
+          <View style={styles.quickActionsContainer}>
+            <TouchableOpacity style={styles.quickActionButton} onPress={() => setCurrentScreen('favorites')}>
+              <Ionicons name="heart" size={24} color={colors.error} />
+              <Text style={styles.quickActionText}>Favoris</Text>
+              <Text style={styles.quickActionCount}>{favorites.length}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionButton} onPress={() => setCurrentScreen('goals')}>
+              <Ionicons name="flag" size={24} color={colors.primary} />
+              <Text style={styles.quickActionText}>Objectifs</Text>
+              <Text style={styles.quickActionCount}>{healthGoals.length}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickActionButton} onPress={() => compareProducts.length >= 2 ? setCurrentScreen('compare') : Alert.alert('Info', 'Ajoutez des produits à comparer depuis leur page de détails')}>
+              <Ionicons name="git-compare" size={24} color={colors.warning} />
+              <Text style={styles.quickActionText}>Comparer</Text>
+              <Text style={styles.quickActionCount}>{compareProducts.length}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Health Goals Summary */}
+          {healthGoals.length > 0 && (
+            <View style={styles.profileSection}>
+              <View style={styles.profileSectionHeader}>
+                <Text style={styles.profileSectionTitle}>Mes Objectifs Santé</Text>
+                <TouchableOpacity onPress={() => setCurrentScreen('goals')}>
+                  <Text style={styles.profileSectionLink}>Voir tout</Text>
+                </TouchableOpacity>
+              </View>
+              {healthGoals.slice(0, 3).map((goal, index) => (
+                <View key={index} style={styles.goalMiniItem}>
+                  <Ionicons name={goal.icon || 'flag'} size={18} color={colors.primary} />
+                  <Text style={styles.goalMiniText}>{goal.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {/* Premium Menu Feature */}
+          <View style={styles.profileSection}>
+            <View style={styles.profileSectionHeader}>
+              <Text style={styles.profileSectionTitle}>Menu Hebdomadaire</Text>
+              {user.subscription_type === 'premium' && <Ionicons name="star" size={16} color={colors.premium} />}
+            </View>
+            {user.subscription_type === 'premium' ? (
+              <TouchableOpacity style={styles.menuButton} onPress={generateMenu} disabled={menuLoading}>
+                {menuLoading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <>
+                    <Ionicons name="restaurant" size={20} color="#FFF" />
+                    <Text style={styles.menuButtonText}>Générer mon menu IA</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.premiumFeatureLocked}>
+                <Ionicons name="lock-closed" size={20} color={colors.textSecondary} />
+                <Text style={styles.premiumFeatureText}>Fonctionnalité Premium</Text>
+              </View>
+            )}
+          </View>
+
           {user.subscription_type !== 'premium' && (
             <View style={styles.premiumPromo}>
               <View style={styles.premiumPromoHeader}>
@@ -932,12 +1273,12 @@ export default function NutriScanApp() {
                 <Text style={styles.premiumPromoTitle}>Passez à Premium</Text>
               </View>
               <Text style={styles.premiumPromoText}>
-                • Menus hebdomadaires personnalisés{'\n'}
-                • Recommandations avancées{'\n'}
-                • Aliments curatifs détaillés{'\n'}
+                • Menus hebdomadaires personnalisés IA{'\n'}
+                • Objectifs santé personnalisés{'\n'}
+                • Comparaison de produits{'\n'}
                 • Support prioritaire
               </Text>
-              <TouchableOpacity style={styles.premiumButton}>
+              <TouchableOpacity style={styles.premiumButton} onPress={upgradeToPremium}>
                 <Text style={styles.premiumButtonText}>Activer Premium</Text>
               </TouchableOpacity>
             </View>
@@ -950,6 +1291,256 @@ export default function NutriScanApp() {
         </View>
       )}
     </ScrollView>
+  );
+
+  // Goals Screen
+  const renderGoalsScreen = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={goHome}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Objectifs Santé</Text>
+        <TouchableOpacity onPress={() => setShowGoalModal(true)}>
+          <Ionicons name="add-circle" size={28} color={colors.primary} />
+        </TouchableOpacity>
+      </View>
+
+      {healthGoals.length === 0 ? (
+        <View style={styles.emptyStateLarge}>
+          <Ionicons name="flag-outline" size={64} color={colors.textSecondary} />
+          <Text style={styles.emptyStateTitle}>Aucun objectif</Text>
+          <Text style={styles.emptyStateSubtext}>Définissez des objectifs pour suivre votre alimentation</Text>
+          <TouchableOpacity style={styles.addGoalButton} onPress={() => setShowGoalModal(true)}>
+            <Ionicons name="add" size={20} color="#FFF" />
+            <Text style={styles.addGoalButtonText}>Ajouter un objectif</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        healthGoals.map((goal, index) => (
+          <View key={index} style={styles.goalCard}>
+            <View style={styles.goalCardHeader}>
+              <View style={styles.goalIconContainer}>
+                <Ionicons name={goal.icon || 'flag'} size={24} color={colors.primary} />
+              </View>
+              <View style={styles.goalCardInfo}>
+                <Text style={styles.goalCardTitle}>{goal.name}</Text>
+                <Text style={styles.goalCardDescription}>{goal.description}</Text>
+              </View>
+              <TouchableOpacity onPress={() => deleteGoal(goal.id)}>
+                <Ionicons name="trash-outline" size={20} color={colors.error} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))
+      )}
+    </ScrollView>
+  );
+
+  // Favorites Screen
+  const renderFavoritesScreen = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={goHome}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Mes Favoris</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      {favorites.length === 0 ? (
+        <View style={styles.emptyStateLarge}>
+          <Ionicons name="heart-outline" size={64} color={colors.textSecondary} />
+          <Text style={styles.emptyStateTitle}>Aucun favori</Text>
+          <Text style={styles.emptyStateSubtext}>Ajoutez des produits en favoris depuis leur page de détails</Text>
+        </View>
+      ) : (
+        favorites.map((fav, index) => (
+          <TouchableOpacity key={index} style={styles.favoriteItem} onPress={() => fetchProduct(fav.barcode)}>
+            <View style={styles.favoriteImageContainer}>
+              {fav.image_url ? (
+                <Image source={{ uri: fav.image_url }} style={styles.favoriteImage} />
+              ) : (
+                <Ionicons name="cube-outline" size={30} color={colors.textSecondary} />
+              )}
+            </View>
+            <View style={styles.favoriteInfo}>
+              <Text style={styles.favoriteName} numberOfLines={1}>{fav.product_name}</Text>
+              <Text style={styles.favoriteBrand} numberOfLines={1}>{fav.brand || 'Marque inconnue'}</Text>
+            </View>
+            <View style={[styles.favoriteScore, { backgroundColor: getScoreColor(fav.health_score) }]}>
+              <Text style={styles.favoriteScoreText}>{fav.health_score}</Text>
+            </View>
+            <TouchableOpacity onPress={() => removeFromFavorites(fav.barcode)} style={styles.removeFavoriteBtn}>
+              <Ionicons name="heart-dislike" size={20} color={colors.error} />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        ))
+      )}
+    </ScrollView>
+  );
+
+  // Comparison Screen
+  const renderCompareScreen = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={goHome}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Comparaison</Text>
+        <TouchableOpacity onPress={() => { setCompareProducts([]); setComparisonResult(null); }}>
+          <Text style={styles.clearCompareText}>Effacer</Text>
+        </TouchableOpacity>
+      </View>
+
+      {compareProducts.length === 0 ? (
+        <View style={styles.emptyStateLarge}>
+          <Ionicons name="git-compare-outline" size={64} color={colors.textSecondary} />
+          <Text style={styles.emptyStateTitle}>Aucun produit à comparer</Text>
+          <Text style={styles.emptyStateSubtext}>Ajoutez des produits depuis leur page de détails</Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.compareProductsRow}>
+            {compareProducts.map((p, index) => (
+              <View key={index} style={styles.compareProductCard}>
+                <TouchableOpacity style={styles.removeCompareBtn} onPress={() => removeFromComparison(p.barcode)}>
+                  <Ionicons name="close-circle" size={20} color={colors.error} />
+                </TouchableOpacity>
+                {p.image_url ? (
+                  <Image source={{ uri: p.image_url }} style={styles.compareProductImage} />
+                ) : (
+                  <Ionicons name="cube-outline" size={40} color={colors.textSecondary} />
+                )}
+                <Text style={styles.compareProductName} numberOfLines={2}>{p.name}</Text>
+                <View style={[styles.compareProductScore, { backgroundColor: getScoreColor(p.health_score) }]}>
+                  <Text style={styles.compareProductScoreText}>{p.health_score}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {compareProducts.length >= 2 && !comparisonResult && (
+            <TouchableOpacity style={styles.compareButton} onPress={runComparison}>
+              <Ionicons name="analytics" size={20} color="#FFF" />
+              <Text style={styles.compareButtonText}>Comparer maintenant</Text>
+            </TouchableOpacity>
+          )}
+
+          {comparisonResult && (
+            <View style={styles.comparisonResults}>
+              <Text style={styles.comparisonTitle}>Résultats</Text>
+              <View style={styles.comparisonRow}>
+                <Text style={styles.comparisonLabel}>Meilleur score santé:</Text>
+                <Text style={styles.comparisonWinner}>{compareProducts.find(p => p.barcode === comparisonResult.best_health_score)?.name}</Text>
+              </View>
+              <View style={styles.comparisonRow}>
+                <Text style={styles.comparisonLabel}>Moins de sucre:</Text>
+                <Text style={styles.comparisonWinner}>{compareProducts.find(p => p.barcode === comparisonResult.lowest_sugar)?.name}</Text>
+              </View>
+              <View style={styles.comparisonRow}>
+                <Text style={styles.comparisonLabel}>Moins de sel:</Text>
+                <Text style={styles.comparisonWinner}>{compareProducts.find(p => p.barcode === comparisonResult.lowest_salt)?.name}</Text>
+              </View>
+              <View style={styles.comparisonRow}>
+                <Text style={styles.comparisonLabel}>Plus de fibres:</Text>
+                <Text style={styles.comparisonWinner}>{compareProducts.find(p => p.barcode === comparisonResult.highest_fiber)?.name}</Text>
+              </View>
+            </View>
+          )}
+        </>
+      )}
+    </ScrollView>
+  );
+
+  // Menu Screen
+  const renderMenuScreen = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={goHome}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Menu Hebdomadaire</Text>
+        <Ionicons name="restaurant" size={24} color={colors.primary} />
+      </View>
+
+      {!weeklyMenu ? (
+        <View style={styles.emptyStateLarge}>
+          <Ionicons name="restaurant-outline" size={64} color={colors.textSecondary} />
+          <Text style={styles.emptyStateTitle}>Aucun menu généré</Text>
+          <Text style={styles.emptyStateSubtext}>Générez votre menu personnalisé depuis votre profil</Text>
+        </View>
+      ) : (
+        <>
+          {['samedi', 'dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].map((day) => (
+            weeklyMenu[day] && (
+              <View key={day} style={styles.menuDayCard}>
+                <Text style={styles.menuDayTitle}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
+                <View style={styles.menuMealRow}>
+                  <Ionicons name="sunny" size={16} color={colors.warning} />
+                  <Text style={styles.menuMealText}>{weeklyMenu[day].petit_dejeuner}</Text>
+                </View>
+                <View style={styles.menuMealRow}>
+                  <Ionicons name="restaurant" size={16} color={colors.primary} />
+                  <Text style={styles.menuMealText}>{weeklyMenu[day].dejeuner}</Text>
+                </View>
+                <View style={styles.menuMealRow}>
+                  <Ionicons name="moon" size={16} color={colors.primaryDark} />
+                  <Text style={styles.menuMealText}>{weeklyMenu[day].diner}</Text>
+                </View>
+                {weeklyMenu[day].collation && (
+                  <View style={styles.menuMealRow}>
+                    <Ionicons name="cafe" size={16} color={colors.textSecondary} />
+                    <Text style={styles.menuMealText}>{weeklyMenu[day].collation}</Text>
+                  </View>
+                )}
+              </View>
+            )
+          ))}
+          {weeklyMenu.liste_courses && (
+            <View style={styles.shoppingListCard}>
+              <Text style={styles.shoppingListTitle}>Liste de courses</Text>
+              {weeklyMenu.liste_courses.map((item: string, index: number) => (
+                <View key={index} style={styles.shoppingListItem}>
+                  <Ionicons name="checkbox-outline" size={16} color={colors.primary} />
+                  <Text style={styles.shoppingListText}>{item}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </>
+      )}
+    </ScrollView>
+  );
+
+  // Goal Selection Modal
+  const renderGoalModal = () => (
+    <Modal visible={showGoalModal} transparent animationType="slide" onRequestClose={() => setShowGoalModal(false)}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Nouvel Objectif</Text>
+            <TouchableOpacity onPress={() => setShowGoalModal(false)}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody}>
+            {Object.entries(goalTypes).map(([key, goal]: [string, any]) => (
+              <TouchableOpacity key={key} style={styles.goalTypeItem} onPress={() => createGoal(key)}>
+                <View style={styles.goalTypeIcon}>
+                  <Ionicons name={goal.icon || 'flag'} size={24} color={colors.primary} />
+                </View>
+                <View style={styles.goalTypeInfo}>
+                  <Text style={styles.goalTypeName}>{goal.name}</Text>
+                  <Text style={styles.goalTypeDescription}>{goal.description}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   );
 
   // Scanner Screen
@@ -1056,8 +1647,33 @@ export default function NutriScanApp() {
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={styles.productHeaderTitle}>Détails produit</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.productHeaderActions}>
+            <TouchableOpacity style={styles.productHeaderAction} onPress={() => isFavorite(product.barcode) ? removeFromFavorites(product.barcode) : addToFavorites(product.barcode)}>
+              <Ionicons name={isFavorite(product.barcode) ? 'heart' : 'heart-outline'} size={22} color={isFavorite(product.barcode) ? colors.error : colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.productHeaderAction} onPress={shareProduct}>
+              <Ionicons name="share-social-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.productHeaderAction} onPress={() => addToComparison({ barcode: product.barcode, name: product.name, image_url: product.image_url, health_score: product.health_score })}>
+              <Ionicons name="git-compare-outline" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* Goal Alerts */}
+        {goalAlerts.length > 0 && (
+          <View style={styles.goalAlertsContainer}>
+            {goalAlerts.map((alert, index) => (
+              <View key={index} style={[styles.goalAlertItem, { borderLeftColor: alert.severity === 'high' ? colors.error : colors.warning }]}>
+                <Ionicons name="warning" size={16} color={alert.severity === 'high' ? colors.error : colors.warning} />
+                <View style={styles.goalAlertText}>
+                  <Text style={styles.goalAlertTitle}>{alert.goal}</Text>
+                  <Text style={styles.goalAlertMessage}>{alert.message}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Product Info */}
         <View style={styles.productCard}>
@@ -1325,6 +1941,10 @@ export default function NutriScanApp() {
       {currentScreen === 'auth' && renderAuthScreen()}
       {currentScreen === 'scanner' && renderScannerScreen()}
       {currentScreen === 'product' && renderProductScreen()}
+      {currentScreen === 'goals' && renderGoalsScreen()}
+      {currentScreen === 'favorites' && renderFavoritesScreen()}
+      {currentScreen === 'compare' && renderCompareScreen()}
+      {currentScreen === 'menu' && renderMenuScreen()}
       {currentScreen === 'main' && (
         <View style={styles.mainContainer}>
           {currentTab === 'home' && renderHomeTab()}
@@ -1338,6 +1958,7 @@ export default function NutriScanApp() {
       
       {renderAdditiveModal()}
       {renderHealingFoodModal()}
+      {renderGoalModal()}
     </SafeAreaView>
   );
 }
@@ -1640,4 +2261,96 @@ const styles = StyleSheet.create({
   healingFoodDisclaimerText: { fontSize: 12, color: colors.textSecondary, marginLeft: 8, flex: 1, lineHeight: 18 },
   healingFoodTapHint: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   healingFoodTapText: { fontSize: 11, color: colors.primary, fontWeight: '500' },
+
+  // NEW STYLES - Quick Actions
+  quickActionsContainer: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 20 },
+  quickActionButton: { alignItems: 'center', backgroundColor: colors.surface, padding: 16, borderRadius: 16, minWidth: 90 },
+  quickActionText: { fontSize: 12, color: colors.text, fontWeight: '500', marginTop: 8 },
+  quickActionCount: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+
+  // Profile Section
+  profileSection: { marginTop: 20, backgroundColor: colors.surface, borderRadius: 16, padding: 16 },
+  profileSectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  profileSectionTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  profileSectionLink: { fontSize: 14, color: colors.primary, fontWeight: '500' },
+
+  // Goals Mini
+  goalMiniItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.background },
+  goalMiniText: { fontSize: 14, color: colors.text, marginLeft: 12 },
+
+  // Menu Button
+  menuButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 12, marginTop: 12 },
+  menuButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  premiumFeatureLocked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: colors.surface, borderRadius: 12 },
+  premiumFeatureText: { fontSize: 14, color: colors.textSecondary, marginLeft: 8 },
+
+  // Screen Header
+  screenHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, marginBottom: 20 },
+  screenTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
+
+  // Goals Screen
+  goalCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12 },
+  goalCardHeader: { flexDirection: 'row', alignItems: 'center' },
+  goalIconContainer: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center' },
+  goalCardInfo: { flex: 1, marginLeft: 12 },
+  goalCardTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
+  goalCardDescription: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  addGoalButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, marginTop: 20 },
+  addGoalButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+
+  // Goal Type Selection
+  goalTypeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  goalTypeIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center' },
+  goalTypeInfo: { flex: 1, marginLeft: 12 },
+  goalTypeName: { fontSize: 16, fontWeight: '600', color: colors.text },
+  goalTypeDescription: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+
+  // Favorites Screen
+  favoriteItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginBottom: 12 },
+  favoriteImageContainer: { width: 48, height: 48, borderRadius: 8, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  favoriteImage: { width: 48, height: 48, resizeMode: 'contain' },
+  favoriteInfo: { flex: 1, marginLeft: 12 },
+  favoriteName: { fontSize: 14, fontWeight: '500', color: colors.text },
+  favoriteBrand: { fontSize: 12, color: colors.textSecondary },
+  favoriteScore: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  favoriteScoreText: { color: '#FFF', fontWeight: '600', fontSize: 12 },
+  removeFavoriteBtn: { padding: 8, marginLeft: 8 },
+
+  // Compare Screen
+  clearCompareText: { fontSize: 14, color: colors.error, fontWeight: '500' },
+  compareProductsRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', marginBottom: 20 },
+  compareProductCard: { width: '45%', backgroundColor: colors.surface, borderRadius: 16, padding: 12, marginBottom: 12, alignItems: 'center' },
+  removeCompareBtn: { position: 'absolute', top: 8, right: 8, zIndex: 1 },
+  compareProductImage: { width: 60, height: 60, borderRadius: 8, resizeMode: 'contain', marginBottom: 8 },
+  compareProductName: { fontSize: 13, fontWeight: '500', color: colors.text, textAlign: 'center', marginBottom: 8 },
+  compareProductScore: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  compareProductScoreText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+  compareButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 12, marginHorizontal: 16 },
+  compareButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  comparisonResults: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginTop: 20 },
+  comparisonTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 16 },
+  comparisonRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: colors.background },
+  comparisonLabel: { fontSize: 14, color: colors.textSecondary },
+  comparisonWinner: { fontSize: 14, fontWeight: '600', color: colors.success, maxWidth: '50%', textAlign: 'right' },
+
+  // Menu Screen
+  menuDayCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12 },
+  menuDayTitle: { fontSize: 16, fontWeight: '700', color: colors.primary, marginBottom: 12, textTransform: 'capitalize' },
+  menuMealRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8 },
+  menuMealText: { fontSize: 14, color: colors.text, marginLeft: 10, flex: 1, lineHeight: 20 },
+  shoppingListCard: { backgroundColor: colors.surfaceAlt, borderRadius: 16, padding: 16, marginTop: 20 },
+  shoppingListTitle: { fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 16 },
+  shoppingListItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  shoppingListText: { fontSize: 14, color: colors.text, marginLeft: 10 },
+
+  // Product Header Actions
+  productHeaderActions: { flexDirection: 'row', alignItems: 'center' },
+  productHeaderAction: { padding: 8, marginLeft: 4 },
+
+  // Goal Alerts
+  goalAlertsContainer: { marginHorizontal: 16, marginBottom: 12 },
+  goalAlertItem: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FFF', borderRadius: 12, padding: 12, marginBottom: 8, borderLeftWidth: 4 },
+  goalAlertText: { flex: 1, marginLeft: 10 },
+  goalAlertTitle: { fontSize: 13, fontWeight: '600', color: colors.text },
+  goalAlertMessage: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
 });
