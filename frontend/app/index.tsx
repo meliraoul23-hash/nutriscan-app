@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   ScrollView,
   Image,
   RefreshControl,
@@ -45,6 +46,29 @@ interface Product {
   categories: string[];
   pro_tip: string;
   found: boolean;
+  // New fields
+  ingredients_text: string;
+  ingredients_list: Ingredient[];
+  allergens: string[];
+  health_risks: HealthRisk[];
+  is_vegan: boolean;
+  is_vegetarian: boolean;
+  is_palm_oil_free: boolean;
+}
+
+interface Ingredient {
+  id: string;
+  name: string;
+  percent: number;
+  vegan: string;
+  vegetarian: string;
+}
+
+interface HealthRisk {
+  title: string;
+  description: string;
+  severity: 'high' | 'medium' | 'low';
+  icon: string;
 }
 
 interface Additive {
@@ -164,11 +188,14 @@ export default function NutriScanApp() {
   };
 
   const fetchProduct = async (barcode: string) => {
+    console.log('fetchProduct called with barcode:', barcode);
     setLoading(true);
+    setCurrentScreen('product'); // Move screen change to beginning
     try {
       // Fetch product
       const response = await axios.get(`${API_URL}/product/${barcode}`);
       const productData = response.data;
+      console.log('Product data received:', productData.name);
       setProduct(productData);
 
       if (productData.found) {
@@ -197,11 +224,10 @@ export default function NutriScanApp() {
         // Refresh history
         fetchHistory();
       }
-
-      setCurrentScreen('product');
     } catch (error) {
       console.log('Error fetching product:', error);
       setProduct(null);
+      setCurrentScreen('home'); // Go back home on error
     } finally {
       setLoading(false);
     }
@@ -258,8 +284,11 @@ export default function NutriScanApp() {
           history.slice(0, 5).map((item) => (
             <TouchableOpacity
               key={item.id}
+              onPress={() => {
+                console.log('History item pressed:', item.barcode);
+                fetchProduct(item.barcode);
+              }}
               style={styles.historyItem}
-              onPress={() => fetchProduct(item.barcode)}
               activeOpacity={0.7}
             >
               <View style={styles.historyImageContainer}>
@@ -566,6 +595,132 @@ export default function NutriScanApp() {
                 </View>
               ))}
             </View>
+          </View>
+        )}
+
+        {/* Health Risks Section */}
+        {product.health_risks && product.health_risks.length > 0 && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderWithIcon}>
+              <Ionicons name="warning-outline" size={20} color={colors.error} />
+              <Text style={styles.sectionCardTitleDanger}>Risques pour la Santé</Text>
+            </View>
+            {product.health_risks.map((risk, index) => (
+              <View key={index} style={[
+                styles.riskItem,
+                { borderLeftColor: risk.severity === 'high' ? colors.error : risk.severity === 'medium' ? colors.warning : colors.success }
+              ]}>
+                <View style={styles.riskHeader}>
+                  <Ionicons 
+                    name={
+                      risk.icon === 'factory' ? 'construct-outline' :
+                      risk.icon === 'cube' ? 'cube-outline' :
+                      risk.icon === 'heart' ? 'heart-outline' :
+                      risk.icon === 'water' ? 'water-outline' :
+                      risk.icon === 'flame' ? 'flame-outline' :
+                      risk.icon === 'leaf' ? 'leaf-outline' :
+                      risk.icon === 'flask' ? 'flask-outline' :
+                      'alert-circle-outline'
+                    } 
+                    size={18} 
+                    color={risk.severity === 'high' ? colors.error : risk.severity === 'medium' ? colors.warning : colors.textSecondary} 
+                  />
+                  <Text style={[
+                    styles.riskTitle,
+                    { color: risk.severity === 'high' ? colors.error : risk.severity === 'medium' ? colors.warning : colors.text }
+                  ]}>{risk.title}</Text>
+                </View>
+                <Text style={styles.riskDescription}>{risk.description}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Allergens Section */}
+        {product.allergens && product.allergens.length > 0 && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderWithIcon}>
+              <Ionicons name="alert-circle-outline" size={20} color={colors.warning} />
+              <Text style={styles.sectionCardTitleWarning}>Allergènes</Text>
+            </View>
+            <View style={styles.allergensContainer}>
+              {product.allergens.map((allergen, index) => (
+                <View key={index} style={styles.allergenBadge}>
+                  <Ionicons name="warning" size={14} color={colors.warning} />
+                  <Text style={styles.allergenText}>{allergen}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Ingredients Section */}
+        {product.ingredients_text && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderWithIcon}>
+              <Ionicons name="list-outline" size={20} color={colors.primary} />
+              <Text style={styles.sectionCardTitle}>Ingrédients</Text>
+            </View>
+            
+            {/* Dietary Badges */}
+            <View style={styles.dietaryBadgesContainer}>
+              {product.is_vegan && (
+                <View style={[styles.dietaryBadge, { backgroundColor: '#E8F5E9' }]}>
+                  <Ionicons name="leaf" size={14} color={colors.success} />
+                  <Text style={[styles.dietaryBadgeText, { color: colors.success }]}>Vegan</Text>
+                </View>
+              )}
+              {product.is_vegetarian && !product.is_vegan && (
+                <View style={[styles.dietaryBadge, { backgroundColor: '#E8F5E9' }]}>
+                  <Ionicons name="leaf-outline" size={14} color={colors.success} />
+                  <Text style={[styles.dietaryBadgeText, { color: colors.success }]}>Végétarien</Text>
+                </View>
+              )}
+              {!product.is_palm_oil_free && (
+                <View style={[styles.dietaryBadge, { backgroundColor: '#FFF3E0' }]}>
+                  <Ionicons name="alert" size={14} color={colors.warning} />
+                  <Text style={[styles.dietaryBadgeText, { color: colors.warning }]}>Huile de palme</Text>
+                </View>
+              )}
+              {product.is_palm_oil_free && (
+                <View style={[styles.dietaryBadge, { backgroundColor: '#E8F5E9' }]}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                  <Text style={[styles.dietaryBadgeText, { color: colors.success }]}>Sans huile de palme</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Ingredients Text */}
+            <Text style={styles.ingredientsText}>{product.ingredients_text}</Text>
+            
+            {/* Detailed Ingredients List */}
+            {product.ingredients_list && product.ingredients_list.length > 0 && (
+              <View style={styles.ingredientsListContainer}>
+                <Text style={styles.ingredientsListTitle}>Détail des ingrédients:</Text>
+                {product.ingredients_list.slice(0, 8).map((ing, index) => (
+                  <View key={index} style={styles.ingredientItem}>
+                    <View style={styles.ingredientNameContainer}>
+                      <Text style={styles.ingredientName}>{ing.name}</Text>
+                      {ing.percent > 0 && (
+                        <Text style={styles.ingredientPercent}>{ing.percent.toFixed(1)}%</Text>
+                      )}
+                    </View>
+                    <View style={styles.ingredientTags}>
+                      {ing.vegan === 'yes' && (
+                        <View style={styles.ingredientTag}>
+                          <Ionicons name="leaf" size={10} color={colors.success} />
+                        </View>
+                      )}
+                      {ing.vegan === 'no' && (
+                        <View style={[styles.ingredientTag, { backgroundColor: '#FFEBEE' }]}>
+                          <Ionicons name="close" size={10} color={colors.error} />
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -1285,5 +1440,142 @@ const styles = StyleSheet.create({
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+
+  // Health Risks Styles
+  sectionHeaderWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionCardTitleDanger: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.error,
+    marginLeft: 8,
+  },
+  sectionCardTitleWarning: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.warning,
+    marginLeft: 8,
+  },
+  riskItem: {
+    backgroundColor: '#FFF5F5',
+    padding: 14,
+    borderRadius: 10,
+    marginBottom: 10,
+    borderLeftWidth: 4,
+  },
+  riskHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  riskTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  riskDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+
+  // Allergens Styles
+  allergensContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  allergenBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  allergenText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.warning,
+    marginLeft: 6,
+  },
+
+  // Ingredients Styles
+  dietaryBadgesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  dietaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  dietaryBadgeText: {
+    fontSize: 12,
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  ingredientsText: {
+    fontSize: 14,
+    color: colors.text,
+    lineHeight: 22,
+    backgroundColor: colors.surface,
+    padding: 12,
+    borderRadius: 8,
+  },
+  ingredientsListContainer: {
+    marginTop: 16,
+  },
+  ingredientsListTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 10,
+  },
+  ingredientItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surface,
+  },
+  ingredientNameContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ingredientName: {
+    fontSize: 13,
+    color: colors.text,
+    flex: 1,
+  },
+  ingredientPercent: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  ingredientTags: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  ingredientTag: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

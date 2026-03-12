@@ -69,6 +69,12 @@ class ScanHistoryCreate(BaseModel):
     health_score: int = 0
     nutri_score: str = ""
 
+class HealthRisk(BaseModel):
+    title: str
+    description: str
+    severity: str  # 'high', 'medium', 'low'
+    icon: str
+
 class ProductResponse(BaseModel):
     barcode: str
     name: str
@@ -83,6 +89,14 @@ class ProductResponse(BaseModel):
     categories: List[str]
     pro_tip: str
     found: bool = True
+    # New fields for ingredients and health risks
+    ingredients_text: str = ""
+    ingredients_list: List[Dict[str, Any]] = []
+    allergens: List[str] = []
+    health_risks: List[Dict[str, Any]] = []
+    is_vegan: bool = False
+    is_vegetarian: bool = False
+    is_palm_oil_free: bool = True
 
 class AlternativeProduct(BaseModel):
     barcode: str
@@ -207,6 +221,165 @@ def extract_nutrients(product_data: dict) -> Dict[str, Any]:
         'sodium': nutriments.get('sodium_100g', 0),
     }
 
+def extract_ingredients(product_data: dict) -> tuple:
+    """Extract ingredients list and text from product data"""
+    ingredients_text = product_data.get('ingredients_text', '') or product_data.get('ingredients_text_fr', '') or ''
+    ingredients_list = []
+    
+    raw_ingredients = product_data.get('ingredients', [])
+    for ing in raw_ingredients[:20]:  # Limit to 20 ingredients
+        ingredients_list.append({
+            'id': ing.get('id', ''),
+            'name': ing.get('text', ing.get('id', '').replace('en:', '').replace('fr:', '').replace('-', ' ').title()),
+            'percent': ing.get('percent_estimate', 0),
+            'vegan': ing.get('vegan', 'unknown'),
+            'vegetarian': ing.get('vegetarian', 'unknown'),
+        })
+    
+    return ingredients_text, ingredients_list
+
+def extract_allergens(product_data: dict) -> List[str]:
+    """Extract allergens from product data"""
+    allergens_tags = product_data.get('allergens_tags', [])
+    allergen_names = {
+        'en:gluten': 'Gluten',
+        'en:milk': 'Lait',
+        'en:eggs': 'Oeufs',
+        'en:nuts': 'Fruits à coque',
+        'en:peanuts': 'Arachides',
+        'en:soybeans': 'Soja',
+        'en:celery': 'Céleri',
+        'en:mustard': 'Moutarde',
+        'en:sesame-seeds': 'Sésame',
+        'en:fish': 'Poisson',
+        'en:crustaceans': 'Crustacés',
+        'en:molluscs': 'Mollusques',
+        'en:lupin': 'Lupin',
+        'en:sulphur-dioxide-and-sulphites': 'Sulfites',
+    }
+    
+    allergens = []
+    for tag in allergens_tags:
+        name = allergen_names.get(tag, tag.replace('en:', '').replace('-', ' ').title())
+        allergens.append(name)
+    
+    return allergens
+
+def analyze_health_risks(product_data: dict, additives: List[Dict], nutrients: Dict) -> List[Dict[str, Any]]:
+    """Analyze and return health risks for the product"""
+    risks = []
+    
+    # Check NOVA group (ultra-processed)
+    nova_group = product_data.get('nova_group', 0)
+    if nova_group == 4:
+        risks.append({
+            'title': 'Produit ultra-transformé',
+            'description': 'Ce produit est classé NOVA 4 (ultra-transformé). La consommation régulière de ces produits est associée à un risque accru de maladies cardiovasculaires, diabète et obésité.',
+            'severity': 'high',
+            'icon': 'factory'
+        })
+    elif nova_group == 3:
+        risks.append({
+            'title': 'Produit transformé',
+            'description': 'Ce produit est classé NOVA 3 (transformé). Privilégiez les aliments moins transformés.',
+            'severity': 'medium',
+            'icon': 'cog'
+        })
+    
+    # Check for high sugar
+    sugars = nutrients.get('sugars', 0) or 0
+    if sugars > 20:
+        risks.append({
+            'title': 'Très riche en sucres',
+            'description': f'Contient {sugars}g de sucres pour 100g. Une consommation excessive de sucre peut conduire au diabète, à l\'obésité et aux caries dentaires.',
+            'severity': 'high',
+            'icon': 'cube'
+        })
+    elif sugars > 10:
+        risks.append({
+            'title': 'Riche en sucres',
+            'description': f'Contient {sugars}g de sucres pour 100g. Modérez votre consommation.',
+            'severity': 'medium',
+            'icon': 'cube'
+        })
+    
+    # Check for high saturated fats
+    sat_fat = nutrients.get('saturated_fat', 0) or 0
+    if sat_fat > 10:
+        risks.append({
+            'title': 'Très riche en graisses saturées',
+            'description': f'Contient {sat_fat}g de graisses saturées pour 100g. Peut augmenter le risque de maladies cardiovasculaires.',
+            'severity': 'high',
+            'icon': 'heart'
+        })
+    elif sat_fat > 5:
+        risks.append({
+            'title': 'Riche en graisses saturées',
+            'description': f'Contient {sat_fat}g de graisses saturées pour 100g.',
+            'severity': 'medium',
+            'icon': 'heart'
+        })
+    
+    # Check for high salt
+    salt = nutrients.get('salt', 0) or 0
+    if salt > 1.5:
+        risks.append({
+            'title': 'Très riche en sel',
+            'description': f'Contient {salt}g de sel pour 100g. L\'excès de sel peut causer de l\'hypertension.',
+            'severity': 'high',
+            'icon': 'water'
+        })
+    elif salt > 0.6:
+        risks.append({
+            'title': 'Riche en sel',
+            'description': f'Contient {salt}g de sel pour 100g.',
+            'severity': 'medium',
+            'icon': 'water'
+        })
+    
+    # Check for high calorie density
+    energy = nutrients.get('energy_kcal', 0) or 0
+    if energy > 500:
+        risks.append({
+            'title': 'Très calorique',
+            'description': f'Contient {energy} kcal pour 100g. Attention aux portions.',
+            'severity': 'medium',
+            'icon': 'flame'
+        })
+    
+    # Check for palm oil
+    ingredients_analysis = product_data.get('ingredients_analysis_tags', [])
+    if 'en:palm-oil' in ingredients_analysis:
+        risks.append({
+            'title': 'Contient de l\'huile de palme',
+            'description': 'L\'huile de palme est riche en graisses saturées et sa production a un impact environnemental important.',
+            'severity': 'medium',
+            'icon': 'leaf'
+        })
+    
+    # Check for controversial additives
+    high_risk_additives = [a for a in additives if a.get('risk') == 'high']
+    if high_risk_additives:
+        additive_names = ', '.join([a.get('code', '') for a in high_risk_additives[:3]])
+        risks.append({
+            'title': 'Additifs controversés',
+            'description': f'Contient des additifs à éviter: {additive_names}. Ces substances peuvent présenter des risques pour la santé.',
+            'severity': 'high',
+            'icon': 'flask'
+        })
+    
+    return risks
+
+def check_dietary_info(product_data: dict) -> tuple:
+    """Check if product is vegan/vegetarian and palm oil free"""
+    analysis = product_data.get('ingredients_analysis_tags', [])
+    
+    is_vegan = 'en:vegan' in analysis
+    is_vegetarian = 'en:vegetarian' in analysis or is_vegan
+    is_palm_oil_free = 'en:palm-oil-free' in analysis
+    
+    return is_vegan, is_vegetarian, is_palm_oil_free
+
 # API Routes
 @api_router.get("/")
 async def root():
@@ -257,6 +430,18 @@ async def get_product(barcode: str):
             categories = product.get('categories_tags', [])[:5]
             categories = [c.replace('en:', '').replace('-', ' ').title() for c in categories]
             
+            # Extract ingredients
+            ingredients_text, ingredients_list = extract_ingredients(product)
+            
+            # Extract allergens
+            allergens = extract_allergens(product)
+            
+            # Analyze health risks
+            health_risks = analyze_health_risks(product, additives, nutrients)
+            
+            # Check dietary info
+            is_vegan, is_vegetarian, is_palm_oil_free = check_dietary_info(product)
+            
             return ProductResponse(
                 barcode=barcode,
                 name=product.get('product_name', 'Unknown Product'),
@@ -270,7 +455,14 @@ async def get_product(barcode: str):
                 nutrients=nutrients,
                 categories=categories,
                 pro_tip=pro_tip,
-                found=True
+                found=True,
+                ingredients_text=ingredients_text,
+                ingredients_list=ingredients_list,
+                allergens=allergens,
+                health_risks=health_risks,
+                is_vegan=is_vegan,
+                is_vegetarian=is_vegetarian,
+                is_palm_oil_free=is_palm_oil_free
             )
             
     except Exception as e:
