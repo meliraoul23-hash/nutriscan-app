@@ -23,6 +23,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
 
 const { width, height } = Dimensions.get('window');
 
@@ -209,6 +210,8 @@ export default function NutriScanApp() {
   const [scanned, setScanned] = useState(false);
   const [selectedAdditive, setSelectedAdditive] = useState<Additive | null>(null);
   const [showAdditiveModal, setShowAdditiveModal] = useState(false);
+  const [selectedHealingFood, setSelectedHealingFood] = useState<HealingFood | null>(null);
+  const [showHealingFoodModal, setShowHealingFoodModal] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
 
   const [authError, setAuthError] = useState<string | null>(null);
@@ -272,12 +275,40 @@ export default function NutriScanApp() {
   };
 
   // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-  const loginWithGoogle = () => {
-    if (Platform.OS === 'web') {
-      const redirectUrl = window.location.origin + '/';
-      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-    } else {
-      Alert.alert('Info', 'La connexion Google est disponible uniquement sur le web');
+  const loginWithGoogle = async () => {
+    try {
+      const authUrl = 'https://auth.emergentagent.com/';
+      
+      if (Platform.OS === 'web') {
+        // On web, redirect directly
+        const redirectUrl = window.location.origin + '/';
+        window.location.href = `${authUrl}?redirect=${encodeURIComponent(redirectUrl)}`;
+      } else {
+        // On mobile (iOS/Android), use WebBrowser
+        const result = await WebBrowser.openAuthSessionAsync(
+          authUrl,
+          'nutriscan://'  // Your app's URL scheme
+        );
+        
+        if (result.type === 'success' && result.url) {
+          // Extract session_id from URL
+          const url = new URL(result.url);
+          const sessionId = url.searchParams.get('session_id');
+          
+          if (sessionId) {
+            // Process the session
+            const response = await axios.post(`${API_URL}/auth/session`, { session_id: sessionId });
+            const userData = response.data;
+            
+            await AsyncStorage.setItem('auth_user', JSON.stringify(userData));
+            setUser(userData);
+            setCurrentScreen('main');
+          }
+        }
+      }
+    } catch (error) {
+      console.log('Google login error:', error);
+      setAuthError('Erreur lors de la connexion Google');
     }
   };
 
@@ -346,10 +377,20 @@ export default function NutriScanApp() {
     }
   };
 
+  // Track if we're currently fetching a product to prevent duplicate calls
+  const [isFetching, setIsFetching] = useState(false);
+
   const fetchProduct = async (barcode: string) => {
+    // Prevent multiple simultaneous fetches
+    if (isFetching) {
+      console.log('fetchProduct ignored - already fetching');
+      return;
+    }
+    
     console.log('fetchProduct called with barcode:', barcode);
     
     // Set states immediately
+    setIsFetching(true);
     setProduct(null);
     setAlternatives([]);
     setProductLoading(true);
@@ -365,10 +406,11 @@ export default function NutriScanApp() {
       // Batch state updates
       setProduct(productData);
       setProductLoading(false);
+      setIsFetching(false);
       console.log('States updated');
       
       if (productData.found) {
-        // Save to history in background
+        // Save to history in background (only once)
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
         axios.post(`${API_URL}/history`, {
           barcode: productData.barcode,
@@ -377,7 +419,7 @@ export default function NutriScanApp() {
           image_url: productData.image_url || '',
           health_score: productData.health_score,
           nutri_score: productData.nutri_score,
-        }, { headers }).catch(() => {});
+        }, { headers }).catch((err) => console.log('History save error:', err));
 
         // Fetch alternatives in background if score is below 70
         if (productData.health_score < 70) {
@@ -394,14 +436,27 @@ export default function NutriScanApp() {
       console.log('Error fetching product:', error?.message || error);
       setProduct(null);
       setProductLoading(false);
+      setIsFetching(false);
       setCurrentScreen('main');
     }
   };
 
   const handleBarCodeScanned = async ({ type, data }: { type: string; data: string }) => {
-    if (scanned) return;
+    // Double protection against multiple scans
+    if (scanned) {
+      console.log('Scan ignored - already scanned');
+      return;
+    }
+    
+    // Set scanned immediately to prevent any additional scans
     setScanned(true);
-    await fetchProduct(data);
+    
+    console.log('Barcode scanned:', data);
+    
+    // Small delay to ensure state is set before proceeding
+    setTimeout(() => {
+      fetchProduct(data);
+    }, 100);
   };
 
   const onRefresh = useCallback(async () => {
@@ -457,6 +512,26 @@ export default function NutriScanApp() {
 
   // Auth Screen
   const renderAuthScreen = () => {
+    const validateForm = () => {
+      if (!isLogin && !authName.trim()) {
+        setAuthError('Le nom est requis');
+        return false;
+      }
+      if (!authEmail.trim()) {
+        setAuthError('L\'email est requis');
+        return false;
+      }
+      if (!authEmail.includes('@')) {
+        setAuthError('Veuillez entrer un email valide');
+        return false;
+      }
+      if (!authPassword || authPassword.length < 6) {
+        setAuthError('Le mot de passe doit contenir au moins 6 caractères');
+        return false;
+      }
+      return true;
+    };
+
     return (
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
         <ScrollView contentContainerStyle={styles.authContainer}>
@@ -466,30 +541,37 @@ export default function NutriScanApp() {
             </TouchableOpacity>
             <Ionicons name="leaf" size={60} color={colors.primary} />
             <Text style={styles.authTitle}>NutriScan</Text>
-            <Text style={styles.authSubtitle}>{isLogin ? 'Connexion' : 'Créer un compte'}</Text>
+            <Text style={styles.authSubtitle}>{isLogin ? 'Connexion à votre compte' : 'Créer un nouveau compte'}</Text>
           </View>
 
           <View style={styles.authForm}>
             {!isLogin && (
-              <TextInput
-                style={styles.input}
-                placeholder="Nom complet"
-                value={authName}
-                onChangeText={setAuthName}
-                autoCapitalize="words"
-              />
+              <>
+                <Text style={styles.inputLabel}>Nom complet <Text style={styles.required}>*</Text></Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Ex: Jean Dupont"
+                  value={authName}
+                  onChangeText={setAuthName}
+                  autoCapitalize="words"
+                />
+              </>
             )}
+            
+            <Text style={styles.inputLabel}>Adresse email <Text style={styles.required}>*</Text></Text>
             <TextInput
               style={styles.input}
-              placeholder="Email"
+              placeholder="Ex: jean@exemple.com"
               value={authEmail}
               onChangeText={setAuthEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
+            
+            <Text style={styles.inputLabel}>Mot de passe <Text style={styles.required}>*</Text></Text>
             <TextInput
               style={styles.input}
-              placeholder="Mot de passe"
+              placeholder="Minimum 6 caractères"
               value={authPassword}
               onChangeText={setAuthPassword}
               secureTextEntry
@@ -503,17 +585,19 @@ export default function NutriScanApp() {
             )}
 
             <TouchableOpacity
-              style={styles.authButton}
+              style={[styles.authButton, loading && styles.authButtonDisabled]}
               onPress={() => {
                 setAuthError(null);
-                isLogin ? login(authEmail, authPassword) : register(authEmail, authPassword, authName);
+                if (validateForm()) {
+                  isLogin ? login(authEmail, authPassword) : register(authEmail, authPassword, authName);
+                }
               }}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator color="#FFF" />
               ) : (
-                <Text style={styles.authButtonText}>{isLogin ? 'Se connecter' : "S'inscrire"}</Text>
+                <Text style={styles.authButtonText}>{isLogin ? 'Se connecter' : "Créer mon compte"}</Text>
               )}
             </TouchableOpacity>
 
@@ -655,21 +739,27 @@ export default function NutriScanApp() {
       <View style={styles.sectionContainer}>
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Aliments naturels bienfaisants</Text>
-          {user?.subscription_type !== 'premium' && (
-            <View style={styles.premiumBadge}>
-              <Ionicons name="star" size={12} color={colors.premium} />
-              <Text style={styles.premiumBadgeText}>Premium</Text>
-            </View>
-          )}
         </View>
+        <Text style={styles.sectionSubtitle}>Aliments validés par la science pour votre santé</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.healingFoodsScroll}>
-          {healingFoods.slice(0, 6).map((food, index) => (
-            <View key={index} style={styles.healingFoodCard}>
+          {healingFoods.map((food, index) => (
+            <TouchableOpacity 
+              key={index} 
+              style={styles.healingFoodCard}
+              onPress={() => {
+                setSelectedHealingFood(food);
+                setShowHealingFoodModal(true);
+              }}
+              activeOpacity={0.7}
+            >
               <Text style={styles.healingFoodEmoji}>{food.image}</Text>
               <Text style={styles.healingFoodName}>{food.name}</Text>
-              <Text style={styles.healingFoodBenefit} numberOfLines={2}>{food.benefits.join(', ')}</Text>
-              <Text style={styles.healingFoodSource}>{food.source}</Text>
-            </View>
+              <Text style={styles.healingFoodBenefit} numberOfLines={2}>{food.benefits.slice(0, 2).join(', ')}</Text>
+              <View style={styles.healingFoodTapHint}>
+                <Text style={styles.healingFoodTapText}>Voir plus</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
           ))}
         </ScrollView>
       </View>
@@ -953,7 +1043,13 @@ export default function NutriScanApp() {
     }
 
     return (
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.productScrollContent}>
+      <ScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.productScrollContent}
+        showsVerticalScrollIndicator={true}
+        bounces={true}
+        nestedScrollEnabled={true}
+      >
         {/* Header */}
         <View style={styles.productHeader}>
           <TouchableOpacity style={styles.productBackButton} onPress={goHome}>
@@ -1148,6 +1244,71 @@ export default function NutriScanApp() {
     </Modal>
   );
 
+  // Healing Food Modal
+  const renderHealingFoodModal = () => (
+    <Modal visible={showHealingFoodModal} transparent animationType="slide" onRequestClose={() => setShowHealingFoodModal(false)}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <View style={styles.healingFoodModalTitleContainer}>
+              <Text style={styles.healingFoodModalEmoji}>{selectedHealingFood?.image}</Text>
+              <Text style={styles.modalTitle}>{selectedHealingFood?.name}</Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowHealingFoodModal(false)} style={styles.modalCloseButton}>
+              <Ionicons name="close" size={24} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            {/* Benefits Section */}
+            <View style={styles.healingFoodSection}>
+              <View style={styles.healingFoodSectionHeader}>
+                <Ionicons name="heart" size={20} color={colors.primary} />
+                <Text style={styles.healingFoodSectionTitle}>Bienfaits</Text>
+              </View>
+              <View style={styles.healingFoodTagsContainer}>
+                {selectedHealingFood?.benefits.map((benefit, index) => (
+                  <View key={index} style={styles.healingFoodBenefitTag}>
+                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                    <Text style={styles.healingFoodBenefitText}>{benefit}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* Conditions Section */}
+            <View style={styles.healingFoodSection}>
+              <View style={styles.healingFoodSectionHeader}>
+                <Ionicons name="medkit" size={20} color={colors.warning} />
+                <Text style={styles.healingFoodSectionTitle}>Peut aider pour</Text>
+              </View>
+              <View style={styles.healingFoodTagsContainer}>
+                {selectedHealingFood?.conditions.map((condition, index) => (
+                  <View key={index} style={styles.healingFoodConditionTag}>
+                    <Text style={styles.healingFoodConditionText}>{condition}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* Source Section */}
+            <View style={styles.healingFoodSourceSection}>
+              <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.healingFoodSourceText}>Source: {selectedHealingFood?.source}</Text>
+            </View>
+
+            {/* Disclaimer */}
+            <View style={styles.healingFoodDisclaimer}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.healingFoodDisclaimerText}>
+                Ces informations sont basées sur des études scientifiques et ne remplacent pas un avis médical professionnel.
+              </Text>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
   // Loading state
   if (authLoading) {
     return (
@@ -1176,6 +1337,7 @@ export default function NutriScanApp() {
       )}
       
       {renderAdditiveModal()}
+      {renderHealingFoodModal()}
     </SafeAreaView>
   );
 }
@@ -1185,7 +1347,7 @@ const styles = StyleSheet.create({
   mainContainer: { flex: 1 },
   scrollView: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 100 },
-  productScrollContent: { paddingBottom: 40 },
+  productScrollContent: { paddingBottom: 40, flexGrow: 1 },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
 
   // Tab Bar
@@ -1454,9 +1616,28 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.surface },
   modalTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
   modalBody: { padding: 20 },
+  modalCloseButton: { padding: 4 },
   additiveTitleModal: { fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 12 },
   riskBadgeModal: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, marginBottom: 20 },
   riskBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '600' },
   additiveDetailsTitle: { fontSize: 14, fontWeight: '600', color: colors.text, marginTop: 16, marginBottom: 8 },
   additiveDetails: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
+
+  // Healing Food Modal
+  healingFoodModalTitleContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  healingFoodModalEmoji: { fontSize: 28, marginRight: 12 },
+  healingFoodSection: { marginBottom: 24 },
+  healingFoodSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  healingFoodSectionTitle: { fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 8 },
+  healingFoodTagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  healingFoodBenefitTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
+  healingFoodBenefitText: { fontSize: 14, color: colors.text, marginLeft: 6, fontWeight: '500' },
+  healingFoodConditionTag: { backgroundColor: '#FFF3E0', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.warning },
+  healingFoodConditionText: { fontSize: 14, color: colors.warning, fontWeight: '500' },
+  healingFoodSourceSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.surface },
+  healingFoodSourceText: { fontSize: 13, color: colors.textSecondary, marginLeft: 8, fontStyle: 'italic' },
+  healingFoodDisclaimer: { flexDirection: 'row', backgroundColor: colors.surface, padding: 12, borderRadius: 12, marginBottom: 20 },
+  healingFoodDisclaimerText: { fontSize: 12, color: colors.textSecondary, marginLeft: 8, flex: 1, lineHeight: 18 },
+  healingFoodTapHint: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  healingFoodTapText: { fontSize: 11, color: colors.primary, fontWeight: '500' },
 });

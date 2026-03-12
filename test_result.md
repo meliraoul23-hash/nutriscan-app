@@ -119,6 +119,9 @@ backend:
       - working: true
         agent: "testing"
         comment: "✅ PASSED - Tested with Nutella (health score: 37, nutri-score: E, NOVA: 4), Coca-Cola (health score: 53, NOVA: 4), and non-existent product. All responses contain required fields (barcode, name, brand, health_score 0-100, nutri_score, nova_group, additives, nutrients, pro_tip, found). Health scoring algorithm working correctly."
+      - working: true
+        agent: "testing"
+        comment: "✅ RE-TESTED - Product endpoint confirmed working. Nutella health score: 34, Coca-Cola: 53, non-existent product handling correct. All required fields present, health scoring algorithm validated."
 
   - task: "GET /api/alternatives/{barcode} - Find healthier alternatives in same category"
     implemented: true
@@ -180,6 +183,81 @@ backend:
         agent: "testing"
         comment: "✅ PASSED - Successfully clears all history from MongoDB. Returns proper success message and verification confirmed history is empty after deletion. Database operation working correctly."
 
+  - task: "GET /api/healing-foods - Get list of healing foods"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented endpoint to return list of scientifically-backed healing foods with benefits, conditions, and sources"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Retrieved 12 healing foods with proper structure including name, benefits, conditions, source, and image fields. All data properly formatted."
+
+  - task: "GET /api/additive/{code} - Get detailed additive information"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented endpoint to retrieve detailed information about food additives from comprehensive database"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Tested with E250 (Nitrite de sodium). Returns complete additive info with code, name, risk level, description, details, sources, and daily_limit fields."
+
+  - task: "GET /api/search - Search products by name"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented product search endpoint with Open Food Facts integration and health score calculation"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Search endpoint tested with 'chocolat' query. Returns proper JSON structure with products array, count, page, and page_size. Product items include required fields."
+
+  - task: "POST /api/auth/register - User registration"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented user registration with password hashing and JWT token generation"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - User registration working correctly. Handles duplicate email detection, returns JWT token and user object with proper fields (user_id, email, name, subscription_type)."
+
+  - task: "POST /api/auth/login - User authentication"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "Implemented user login with password verification and JWT token generation"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - User login working correctly. Validates credentials, returns JWT token and user object. Tested with registered user account."
+
 frontend:
   - task: "Home Screen with scan button and history"
     implemented: true
@@ -220,7 +298,7 @@ frontend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: false
 
 test_plan:
@@ -234,4 +312,6 @@ agent_communication:
   - agent: "main"
     message: "Built NutriScan MVP with backend API connecting to Open Food Facts and frontend with barcode scanning. Please test all backend endpoints. Test with barcodes: 3017620422003 (Nutella), 5000112637922 (Coca-Cola), 3029330003533 (good product). Focus on product fetch, history, and alternatives endpoints."
   - agent: "testing"
-    message: "✅ BACKEND TESTING COMPLETE - All 5 backend API endpoints tested successfully: Health check (200 OK), Product fetch with Open Food Facts integration (tested Nutella health score: 37, Coca-Cola: 53, non-existent product handling), History management (POST/GET/DELETE working correctly with MongoDB), Alternatives endpoint (working, returns empty array when no alternatives found). Health scoring algorithm validated with real products. All endpoints return proper JSON responses with required fields. Backend is fully functional and ready for production. Created comprehensive test suite at /app/backend_test.py for future regression testing."
+    message: "✅ COMPREHENSIVE BACKEND TESTING COMPLETE - Tested all 14 requested endpoints successfully: 1) Health check (GET /api/) - 200 OK with proper welcome message 2) Product fetch (GET /api/product/{barcode}) - tested Nutella (health score: 34, nutri-score: E, NOVA: 4), Coca-Cola (health score: 53, NOVA: 4), and non-existent product handling (found: false) 3) History management (POST/GET/DELETE /api/history) - saving, retrieving, and clearing work correctly with MongoDB persistence 4) Alternatives endpoint (GET /api/alternatives/{barcode}) - working, returns empty array when no alternatives found 5) Healing foods (GET /api/healing-foods) - returns 12 healing foods with proper structure 6) Additive info (GET /api/additive/e250) - returns detailed info for Nitrite de sodium 7) Search (GET /api/search?q=chocolat) - proper JSON structure returned 8) Authentication (POST /api/auth/register and POST /api/auth/login) - user registration and login working correctly. All endpoints return proper JSON responses with required fields. Health scoring algorithm validated. Duplicate prevention working (5-second window tested). All APIs responding from production URL. Backend is fully functional and ready."
+  - agent: "main"
+    message: "Fixed multiple issues: 1) Added healing food modal with full details (benefits, conditions, sources, disclaimer) 2) Improved barcode scan duplicate prevention with isFetching state 3) Added better scroll support for product details page 4) All placeholders visible on registration form. Please re-test backend endpoints and verify the new features work correctly."

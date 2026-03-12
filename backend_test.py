@@ -232,7 +232,7 @@ class NutriScanTester:
                 all_passed = False
             else:
                 data = response.json()
-                if "message" in data and "cleared" in data["message"].lower():
+                if "message" in data and ("cleared" in data["message"].lower() or "effacé" in data["message"].lower()):
                     self.log_result("History DELETE", True, f"Response: {data['message']}")
                 else:
                     self.log_result("History DELETE", False, f"Unexpected response: {data}")
@@ -298,6 +298,216 @@ class NutriScanTester:
             self.log_result("Alternatives API", False, f"Exception: {str(e)}")
             return False
             
+    async def test_healing_foods_endpoint(self, client: httpx.AsyncClient):
+        """Test GET /api/healing-foods"""
+        try:
+            response = await client.get(f"{API_BASE}/healing-foods")
+            
+            if response.status_code != 200:
+                self.log_result("Healing Foods API", False, f"Status: {response.status_code}")
+                return False
+                
+            data = response.json()
+            
+            if not isinstance(data, list):
+                self.log_result("Healing Foods API", False, f"Expected list, got: {type(data)}")
+                return False
+                
+            if len(data) == 0:
+                self.log_result("Healing Foods API", False, "No healing foods returned")
+                return False
+            
+            # Check structure of first healing food
+            first_food = data[0]
+            required_fields = ['name', 'benefits', 'conditions', 'source', 'image']
+            missing_fields = [field for field in required_fields if field not in first_food]
+            
+            if missing_fields:
+                self.log_result("Healing Foods API", False, f"Missing fields: {missing_fields}")
+                return False
+                
+            self.log_result("Healing Foods API", True, f"Retrieved {len(data)} healing foods")
+            return True
+            
+        except Exception as e:
+            self.log_result("Healing Foods API", False, f"Exception: {str(e)}")
+            return False
+            
+    async def test_additive_endpoint(self, client: httpx.AsyncClient):
+        """Test GET /api/additive/{code}"""
+        try:
+            # Test with E250 (Nitrite de sodium) as specified in requirements
+            response = await client.get(f"{API_BASE}/additive/e250")
+            
+            if response.status_code != 200:
+                self.log_result("Additive API", False, f"Status: {response.status_code}")
+                return False
+                
+            data = response.json()
+            
+            # Check required fields for additive info
+            required_fields = ['code', 'name', 'risk', 'description', 'details', 'sources', 'daily_limit']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                self.log_result("Additive API", False, f"Missing fields: {missing_fields}")
+                return False
+                
+            # Check if the additive is E250 (Nitrite de sodium)
+            if data['code'] != 'E250':
+                self.log_result("Additive API", False, f"Expected E250, got {data['code']}")
+                return False
+                
+            self.log_result("Additive API", True, f"Retrieved additive info for {data['code']}: {data['name']}")
+            return True
+            
+        except Exception as e:
+            self.log_result("Additive API", False, f"Exception: {str(e)}")
+            return False
+    
+    async def test_search_endpoint(self, client: httpx.AsyncClient):
+        """Test GET /api/search endpoint"""
+        try:
+            # Test search with 'chocolat' as specified in requirements
+            response = await client.get(f"{API_BASE}/search", params={'q': 'chocolat'})
+            
+            if response.status_code != 200:
+                self.log_result("Search API", False, f"Status: {response.status_code}")
+                return False
+                
+            data = response.json()
+            
+            # Check response structure
+            required_fields = ['products', 'count', 'page', 'page_size']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                self.log_result("Search API", False, f"Missing fields: {missing_fields}")
+                return False
+                
+            products = data['products']
+            if not isinstance(products, list):
+                self.log_result("Search API", False, f"Products should be list, got: {type(products)}")
+                return False
+            
+            # If products found, check structure
+            if len(products) > 0:
+                first_product = products[0]
+                product_required_fields = ['barcode', 'name', 'brand', 'image_url', 'health_score', 'nutri_score']
+                missing_product_fields = [field for field in product_required_fields if field not in first_product]
+                
+                if missing_product_fields:
+                    self.log_result("Search API", False, f"Missing product fields: {missing_product_fields}")
+                    return False
+                    
+            self.log_result("Search API", True, f"Search returned {len(products)} products for 'chocolat'")
+            return True
+            
+        except Exception as e:
+            self.log_result("Search API", False, f"Exception: {str(e)}")
+            return False
+    
+    async def test_auth_endpoints(self, client: httpx.AsyncClient):
+        """Test authentication endpoints - register and login"""
+        all_passed = True
+        
+        # Test user registration
+        try:
+            register_data = {
+                "email": "test@example.com",
+                "password": "password123",
+                "name": "Test User"
+            }
+            
+            # First try to clear any existing user (ignore errors)
+            try:
+                login_response = await client.post(f"{API_BASE}/auth/login", json={
+                    "email": "test@example.com",
+                    "password": "password123"
+                })
+                # If login succeeds, user already exists, which is fine for testing
+                if login_response.status_code == 200:
+                    self.log_result("Auth Register", True, "User already exists, proceeding with login test")
+                else:
+                    # Try registration
+                    response = await client.post(f"{API_BASE}/auth/register", json=register_data)
+                    
+                    if response.status_code != 200:
+                        # Check if it's because email already exists
+                        error_data = response.json()
+                        if "déjà utilisé" in error_data.get('detail', ''):
+                            self.log_result("Auth Register", True, "Email already exists (expected)")
+                        else:
+                            self.log_result("Auth Register", False, f"Status: {response.status_code}, Detail: {error_data}")
+                            all_passed = False
+                    else:
+                        data = response.json()
+                        required_fields = ['token', 'user']
+                        missing_fields = [field for field in required_fields if field not in data]
+                        
+                        if missing_fields:
+                            self.log_result("Auth Register", False, f"Missing fields: {missing_fields}")
+                            all_passed = False
+                        else:
+                            user_data = data['user']
+                            if user_data.get('email') != register_data['email']:
+                                self.log_result("Auth Register", False, f"Email mismatch: {user_data.get('email')} != {register_data['email']}")
+                                all_passed = False
+                            else:
+                                self.log_result("Auth Register", True, f"User registered successfully: {user_data['name']}")
+            except:
+                # Try registration if login fails
+                response = await client.post(f"{API_BASE}/auth/register", json=register_data)
+                
+                if response.status_code != 200:
+                    error_data = response.json()
+                    if "déjà utilisé" in error_data.get('detail', ''):
+                        self.log_result("Auth Register", True, "Email already exists (expected)")
+                    else:
+                        self.log_result("Auth Register", False, f"Status: {response.status_code}, Detail: {error_data}")
+                        all_passed = False
+                else:
+                    data = response.json()
+                    self.log_result("Auth Register", True, f"User registered successfully: {data['user']['name']}")
+                
+        except Exception as e:
+            self.log_result("Auth Register", False, f"Exception: {str(e)}")
+            all_passed = False
+            
+        # Test user login
+        try:
+            login_data = {
+                "email": "test@example.com",
+                "password": "password123"
+            }
+            
+            response = await client.post(f"{API_BASE}/auth/login", json=login_data)
+            
+            if response.status_code != 200:
+                self.log_result("Auth Login", False, f"Status: {response.status_code}")
+                all_passed = False
+            else:
+                data = response.json()
+                required_fields = ['token', 'user']
+                missing_fields = [field for field in required_fields if field not in data]
+                
+                if missing_fields:
+                    self.log_result("Auth Login", False, f"Missing fields: {missing_fields}")
+                    all_passed = False
+                else:
+                    user_data = data['user']
+                    if user_data.get('email') != login_data['email']:
+                        self.log_result("Auth Login", False, f"Email mismatch: {user_data.get('email')} != {login_data['email']}")
+                        all_passed = False
+                    else:
+                        self.log_result("Auth Login", True, f"User logged in successfully: {user_data['name']}")
+                        
+        except Exception as e:
+            self.log_result("Auth Login", False, f"Exception: {str(e)}")
+            all_passed = False
+            
+        return all_passed
+            
     async def run_all_tests(self):
         """Run all backend tests"""
         print(f"{Colors.BLUE}{Colors.BOLD}🧪 NutriScan Backend API Testing Suite{Colors.ENDC}")
@@ -320,6 +530,22 @@ class NutriScanTester:
             
             print(f"{Colors.YELLOW}🔍 Testing Alternatives Endpoint...{Colors.ENDC}")
             await self.test_alternatives_endpoint(client)
+            print()
+            
+            print(f"{Colors.YELLOW}🔍 Testing Healing Foods Endpoint...{Colors.ENDC}")
+            await self.test_healing_foods_endpoint(client)
+            print()
+            
+            print(f"{Colors.YELLOW}🔍 Testing Additive Info Endpoint...{Colors.ENDC}")
+            await self.test_additive_endpoint(client)
+            print()
+            
+            print(f"{Colors.YELLOW}🔍 Testing Search Endpoint...{Colors.ENDC}")
+            await self.test_search_endpoint(client)
+            print()
+            
+            print(f"{Colors.YELLOW}🔍 Testing Authentication Endpoints...{Colors.ENDC}")
+            await self.test_auth_endpoints(client)
             print()
             
         # Print summary
