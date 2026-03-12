@@ -25,6 +25,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 
+// Firebase imports
+import { 
+  firebaseLogin, 
+  firebaseRegister, 
+  firebaseLogout, 
+  firebaseGoogleLogin,
+  onAuthStateChange,
+  formatUser 
+} from '../src/firebase';
+
 const { width, height } = Dimensions.get('window');
 
 // API URL
@@ -231,18 +241,28 @@ export default function NutriScanApp() {
 
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Auth functions
+  // Firebase Auth functions
   const loadAuthState = async () => {
     try {
-      const savedToken = await AsyncStorage.getItem('auth_token');
-      const savedUser = await AsyncStorage.getItem('auth_user');
-      if (savedToken && savedUser) {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-      }
+      // Listen to Firebase auth state changes
+      const unsubscribe = onAuthStateChange(async (firebaseUser) => {
+        if (firebaseUser) {
+          const appUser = formatUser(firebaseUser);
+          setUser(appUser);
+          await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
+        } else {
+          // Check local storage as fallback
+          const savedUser = await AsyncStorage.getItem('auth_user');
+          if (savedUser) {
+            setUser(JSON.parse(savedUser));
+          }
+        }
+        setAuthLoading(false);
+      });
+      
+      return unsubscribe;
     } catch (error) {
       console.log('Error loading auth state:', error);
-    } finally {
       setAuthLoading(false);
     }
   };
@@ -251,17 +271,20 @@ export default function NutriScanApp() {
     setLoading(true);
     setAuthError(null);
     try {
-      const response = await axios.post(`${API_URL}/auth/login`, { email, password });
-      const { token: newToken, user: newUser } = response.data;
-      await AsyncStorage.setItem('auth_token', newToken);
-      await AsyncStorage.setItem('auth_user', JSON.stringify(newUser));
-      setToken(newToken);
-      setUser(newUser);
-      setCurrentScreen('main');
+      const { user: firebaseUser, error } = await firebaseLogin(email, password);
+      if (error) {
+        setAuthError(error);
+        return;
+      }
+      if (firebaseUser) {
+        const appUser = formatUser(firebaseUser);
+        await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
+        setUser(appUser);
+        setCurrentScreen('main');
+      }
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Connexion échouée';
-      setAuthError(message);
-      console.log('Login error:', message);
+      setAuthError('Connexion échouée');
+      console.log('Login error:', error);
     } finally {
       setLoading(false);
     }
@@ -271,69 +294,59 @@ export default function NutriScanApp() {
     setLoading(true);
     setAuthError(null);
     try {
-      console.log('Registering:', email, name);
-      const response = await axios.post(`${API_URL}/auth/register`, { email, password, name });
-      console.log('Registration response:', response.data);
-      const { token: newToken, user: newUser } = response.data;
-      await AsyncStorage.setItem('auth_token', newToken);
-      await AsyncStorage.setItem('auth_user', JSON.stringify(newUser));
-      setToken(newToken);
-      setUser(newUser);
-      setCurrentScreen('main');
+      console.log('Registering with Firebase:', email, name);
+      const { user: firebaseUser, error } = await firebaseRegister(email, password, name);
+      if (error) {
+        setAuthError(error);
+        return;
+      }
+      if (firebaseUser) {
+        const appUser = formatUser(firebaseUser);
+        await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
+        setUser(appUser);
+        setCurrentScreen('main');
+        Alert.alert('Succès', 'Votre compte a été créé !');
+      }
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Inscription échouée';
-      setAuthError(message);
-      console.log('Register error:', message);
+      setAuthError('Inscription échouée');
+      console.log('Register error:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
   const loginWithGoogle = async () => {
+    setLoading(true);
+    setAuthError(null);
     try {
-      const authUrl = 'https://auth.emergentagent.com/';
-      
-      if (Platform.OS === 'web') {
-        // On web, redirect directly
-        const redirectUrl = window.location.origin + '/';
-        window.location.href = `${authUrl}?redirect=${encodeURIComponent(redirectUrl)}`;
-      } else {
-        // On mobile (iOS/Android), use WebBrowser
-        const result = await WebBrowser.openAuthSessionAsync(
-          authUrl,
-          'nutriscan://'  // Your app's URL scheme
-        );
-        
-        if (result.type === 'success' && result.url) {
-          // Extract session_id from URL
-          const url = new URL(result.url);
-          const sessionId = url.searchParams.get('session_id');
-          
-          if (sessionId) {
-            // Process the session
-            const response = await axios.post(`${API_URL}/auth/session`, { session_id: sessionId });
-            const userData = response.data;
-            
-            await AsyncStorage.setItem('auth_user', JSON.stringify(userData));
-            setUser(userData);
-            setCurrentScreen('main');
-          }
+      const { user: firebaseUser, error } = await firebaseGoogleLogin();
+      if (error) {
+        if (error !== 'Connexion annulée') {
+          setAuthError(error);
         }
+        return;
+      }
+      if (firebaseUser) {
+        const appUser = formatUser(firebaseUser);
+        await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
+        setUser(appUser);
+        setCurrentScreen('main');
       }
     } catch (error) {
       console.log('Google login error:', error);
       setAuthError('Erreur lors de la connexion Google');
+    } finally {
+      setLoading(false);
     }
   };
 
   const logout = async () => {
     try {
-      await axios.post(`${API_URL}/auth/logout`);
-    } catch (error) {}
-    await AsyncStorage.removeItem('auth_token');
+      await firebaseLogout();
+    } catch (error) {
+      console.log('Logout error:', error);
+    }
     await AsyncStorage.removeItem('auth_user');
-    setToken(null);
     setUser(null);
   };
 
