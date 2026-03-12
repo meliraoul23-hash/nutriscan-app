@@ -222,6 +222,7 @@ export default function NutriScanApp() {
   const [compareProducts, setCompareProducts] = useState<any[]>([]);
   const [comparisonResult, setComparisonResult] = useState<any>(null);
   const [goalAlerts, setGoalAlerts] = useState<any[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
   
   // Offline cache
   const [cachedProducts, setCachedProducts] = useState<{[key: string]: Product}>({});
@@ -1325,8 +1326,8 @@ export default function NutriScanApp() {
                 • Comparaison de produits{'\n'}
                 • Support prioritaire
               </Text>
-              <TouchableOpacity style={styles.premiumButton} onPress={upgradeToPremium}>
-                <Text style={styles.premiumButtonText}>Activer Premium</Text>
+              <TouchableOpacity style={styles.premiumButton} onPress={() => setCurrentScreen('premium')}>
+                <Text style={styles.premiumButtonText}>Voir les offres Premium</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -1559,6 +1560,167 @@ export default function NutriScanApp() {
       )}
     </ScrollView>
   );
+
+  // Premium Payment Screen
+  const renderPremiumScreen = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.screenHeader}>
+        <TouchableOpacity onPress={goHome}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Premium</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      {/* Premium Header */}
+      <View style={styles.premiumScreenHeader}>
+        <View style={styles.premiumIconBig}>
+          <Ionicons name="star" size={40} color={colors.premium} />
+        </View>
+        <Text style={styles.premiumScreenTitle}>Passez à Premium</Text>
+        <Text style={styles.premiumScreenSubtitle}>Débloquez toutes les fonctionnalités</Text>
+      </View>
+
+      {/* Features List */}
+      <View style={styles.premiumFeaturesList}>
+        <View style={styles.premiumFeatureItem}>
+          <View style={styles.premiumFeatureIcon}>
+            <Ionicons name="restaurant" size={24} color={colors.primary} />
+          </View>
+          <View style={styles.premiumFeatureText}>
+            <Text style={styles.premiumFeatureName}>Menus IA personnalisés</Text>
+            <Text style={styles.premiumFeatureDesc}>Recevez un menu hebdomadaire adapté à vos goûts</Text>
+          </View>
+        </View>
+        <View style={styles.premiumFeatureItem}>
+          <View style={styles.premiumFeatureIcon}>
+            <Ionicons name="flag" size={24} color={colors.success} />
+          </View>
+          <View style={styles.premiumFeatureText}>
+            <Text style={styles.premiumFeatureName}>Objectifs santé illimités</Text>
+            <Text style={styles.premiumFeatureDesc}>Suivez tous vos objectifs nutritionnels</Text>
+          </View>
+        </View>
+        <View style={styles.premiumFeatureItem}>
+          <View style={styles.premiumFeatureIcon}>
+            <Ionicons name="git-compare" size={24} color={colors.warning} />
+          </View>
+          <View style={styles.premiumFeatureText}>
+            <Text style={styles.premiumFeatureName}>Comparaison avancée</Text>
+            <Text style={styles.premiumFeatureDesc}>Comparez jusqu'à 4 produits en détail</Text>
+          </View>
+        </View>
+        <View style={styles.premiumFeatureItem}>
+          <View style={styles.premiumFeatureIcon}>
+            <Ionicons name="notifications" size={24} color={colors.error} />
+          </View>
+          <View style={styles.premiumFeatureText}>
+            <Text style={styles.premiumFeatureName}>Alertes personnalisées</Text>
+            <Text style={styles.premiumFeatureDesc}>Soyez alerté des produits à éviter</Text>
+          </View>
+        </View>
+        <View style={styles.premiumFeatureItem}>
+          <View style={styles.premiumFeatureIcon}>
+            <Ionicons name="headset" size={24} color="#9C27B0" />
+          </View>
+          <View style={styles.premiumFeatureText}>
+            <Text style={styles.premiumFeatureName}>Support prioritaire</Text>
+            <Text style={styles.premiumFeatureDesc}>Assistance rapide et dédiée</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Pricing Plans */}
+      <Text style={styles.pricingTitle}>Choisissez votre forfait</Text>
+      
+      <TouchableOpacity 
+        style={[styles.pricingCard, selectedPlan === 'yearly' && styles.pricingCardSelected]}
+        onPress={() => setSelectedPlan('yearly')}
+      >
+        <View style={styles.pricingBadge}>
+          <Text style={styles.pricingBadgeText}>ÉCONOMISEZ 25%</Text>
+        </View>
+        <View style={styles.pricingCardContent}>
+          <View style={styles.pricingRadio}>
+            {selectedPlan === 'yearly' ? (
+              <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+            ) : (
+              <Ionicons name="ellipse-outline" size={24} color={colors.textSecondary} />
+            )}
+          </View>
+          <View style={styles.pricingInfo}>
+            <Text style={styles.pricingPlanName}>Annuel</Text>
+            <Text style={styles.pricingPlanDesc}>Facturé une fois par an</Text>
+          </View>
+          <View style={styles.pricingPriceContainer}>
+            <Text style={styles.pricingPrice}>149,99 €</Text>
+            <Text style={styles.pricingPeriod}>/an</Text>
+          </View>
+        </View>
+        <Text style={styles.pricingMonthly}>Soit 12,50 €/mois</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={[styles.pricingCard, selectedPlan === 'monthly' && styles.pricingCardSelected]}
+        onPress={() => setSelectedPlan('monthly')}
+      >
+        <View style={styles.pricingCardContent}>
+          <View style={styles.pricingRadio}>
+            {selectedPlan === 'monthly' ? (
+              <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+            ) : (
+              <Ionicons name="ellipse-outline" size={24} color={colors.textSecondary} />
+            )}
+          </View>
+          <View style={styles.pricingInfo}>
+            <Text style={styles.pricingPlanName}>Mensuel</Text>
+            <Text style={styles.pricingPlanDesc}>Sans engagement</Text>
+          </View>
+          <View style={styles.pricingPriceContainer}>
+            <Text style={styles.pricingPrice}>19,99 €</Text>
+            <Text style={styles.pricingPeriod}>/mois</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+
+      {/* Subscribe Button */}
+      <TouchableOpacity style={styles.subscribeButton} onPress={() => handlePremiumSubscription()}>
+        <Ionicons name="lock-closed" size={20} color="#FFF" />
+        <Text style={styles.subscribeButtonText}>
+          S'abonner - {selectedPlan === 'yearly' ? '149,99 €/an' : '19,99 €/mois'}
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={styles.subscribeNote}>
+        Paiement sécurisé par Stripe. Annulez à tout moment.
+      </Text>
+
+      {/* Guarantee */}
+      <View style={styles.guaranteeBox}>
+        <Ionicons name="shield-checkmark" size={24} color={colors.success} />
+        <Text style={styles.guaranteeText}>Garantie satisfait ou remboursé 30 jours</Text>
+      </View>
+    </ScrollView>
+  );
+
+  // Handle Premium Subscription
+  const handlePremiumSubscription = async () => {
+    if (!user) {
+      Alert.alert('Connexion requise', 'Veuillez vous connecter pour vous abonner.');
+      setCurrentScreen('auth');
+      return;
+    }
+    
+    // For now, show a message - Stripe integration will be added
+    Alert.alert(
+      'Paiement Premium',
+      `Vous avez choisi le forfait ${selectedPlan === 'yearly' ? 'Annuel (149,99 €/an)' : 'Mensuel (19,99 €/mois)'}.\n\nLe système de paiement sera bientôt disponible !`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'OK', onPress: () => upgradeToPremium() }
+      ]
+    );
+  };
 
   // Goal Selection Modal
   const renderGoalModal = () => (
@@ -1992,6 +2154,7 @@ export default function NutriScanApp() {
       {currentScreen === 'favorites' && renderFavoritesScreen()}
       {currentScreen === 'compare' && renderCompareScreen()}
       {currentScreen === 'menu' && renderMenuScreen()}
+      {currentScreen === 'premium' && renderPremiumScreen()}
       {currentScreen === 'main' && (
         <View style={styles.mainContainer}>
           {currentTab === 'home' && renderHomeTab()}
@@ -2408,4 +2571,35 @@ const styles = StyleSheet.create({
   goalAlertText: { flex: 1, marginLeft: 10 },
   goalAlertTitle: { fontSize: 13, fontWeight: '600', color: colors.text },
   goalAlertMessage: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+
+  // Premium Screen
+  premiumScreenHeader: { alignItems: 'center', marginBottom: 24 },
+  premiumIconBig: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FFF8E1', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  premiumScreenTitle: { fontSize: 28, fontWeight: '700', color: colors.text },
+  premiumScreenSubtitle: { fontSize: 16, color: colors.textSecondary, marginTop: 8 },
+  premiumFeaturesList: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 24 },
+  premiumFeatureItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.background },
+  premiumFeatureIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
+  premiumFeatureText: { flex: 1, marginLeft: 12 },
+  premiumFeatureName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  premiumFeatureDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  pricingTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 16 },
+  pricingCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 2, borderColor: 'transparent' },
+  pricingCardSelected: { borderColor: colors.primary, backgroundColor: colors.surfaceAlt },
+  pricingBadge: { position: 'absolute', top: -10, right: 16, backgroundColor: colors.premium, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  pricingBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
+  pricingCardContent: { flexDirection: 'row', alignItems: 'center' },
+  pricingRadio: { marginRight: 12 },
+  pricingInfo: { flex: 1 },
+  pricingPlanName: { fontSize: 16, fontWeight: '600', color: colors.text },
+  pricingPlanDesc: { fontSize: 13, color: colors.textSecondary },
+  pricingPriceContainer: { flexDirection: 'row', alignItems: 'baseline' },
+  pricingPrice: { fontSize: 24, fontWeight: '700', color: colors.text },
+  pricingPeriod: { fontSize: 14, color: colors.textSecondary, marginLeft: 2 },
+  pricingMonthly: { textAlign: 'center', fontSize: 13, color: colors.primary, fontWeight: '500', marginTop: 8 },
+  subscribeButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 18, borderRadius: 12, marginTop: 16 },
+  subscribeButtonText: { color: '#FFF', fontSize: 18, fontWeight: '700', marginLeft: 8 },
+  subscribeNote: { textAlign: 'center', fontSize: 12, color: colors.textSecondary, marginTop: 12 },
+  guaranteeBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', padding: 16, borderRadius: 12, marginTop: 20 },
+  guaranteeText: { fontSize: 14, color: colors.success, fontWeight: '500', marginLeft: 8 },
 });
