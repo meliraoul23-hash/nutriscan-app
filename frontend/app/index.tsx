@@ -809,12 +809,13 @@ export default function NutriScanApp() {
 
   // Upgrade to Premium
   const upgradeToPremium = async () => {
-    if (!user || !token) {
+    if (!user) {
       setCurrentScreen('auth');
       return;
     }
     try {
-      const headers = { Authorization: `Bearer ${token}` };
+      const idToken = await getIdToken();
+      const headers = idToken ? { Authorization: `Bearer ${idToken}` } : {};
       await axios.post(`${API_URL}/subscribe`, {}, { headers });
       const updatedUser = { ...user, subscription_type: 'premium' };
       setUser(updatedUser);
@@ -1772,19 +1773,21 @@ export default function NutriScanApp() {
     setLoading(true);
     try {
       // Get current URL for redirect
-      const baseUrl = Platform.OS === 'web' 
+      const baseUrl = typeof window !== 'undefined' 
         ? window.location.origin 
         : 'https://nutriscan-167.preview.emergentagent.com';
       
       const response = await axios.post(`${API_URL}/create-checkout-session`, {
         plan: selectedPlan,
         success_url: `${baseUrl}/?payment=success`,
-        cancel_url: `${baseUrl}/?payment=cancelled`
+        cancel_url: `${baseUrl}/?payment=cancelled`,
+        user_email: user.email,
+        user_id: user.user_id
       });
       
       const { checkout_url } = response.data;
       
-      if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') {
         // On web, redirect to Stripe checkout
         window.location.href = checkout_url;
       } else {

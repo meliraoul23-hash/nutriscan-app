@@ -953,12 +953,19 @@ class CreateCheckoutRequest(BaseModel):
     plan: str  # 'monthly' or 'yearly'
     success_url: str
     cancel_url: str
+    user_email: Optional[str] = None
+    user_id: Optional[str] = None
 
 @api_router.post("/create-checkout-session")
 async def create_checkout_session(request: CreateCheckoutRequest, user: User = Depends(get_current_user)):
     """Create a Stripe checkout session for Premium subscription"""
-    if not user:
-        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    # Use user from token if available, otherwise use request data
+    user_email = user.email if user else request.user_email
+    user_id = user.user_id if user else request.user_id
+    
+    if not user_email:
+        raise HTTPException(status_code=401, detail="Email requis pour le paiement")
     
     # Define prices
     prices = {
@@ -1000,10 +1007,11 @@ async def create_checkout_session(request: CreateCheckoutRequest, user: User = D
             mode='subscription',
             success_url=request.success_url + '?session_id={CHECKOUT_SESSION_ID}',
             cancel_url=request.cancel_url,
-            client_reference_id=user.user_id,
-            customer_email=user.email,
+            client_reference_id=user_id or user_email,
+            customer_email=user_email,
             metadata={
-                'user_id': user.user_id,
+                'user_id': user_id or user_email,
+                'user_email': user_email,
                 'plan': request.plan
             }
         )
