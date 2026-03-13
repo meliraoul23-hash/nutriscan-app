@@ -811,17 +811,26 @@ export default function NutriScanApp() {
   // Add Health Goal
   const addHealthGoal = async (type: string, name: string) => {
     if (!user) {
-      Alert.alert('Connexion requise', 'Connectez-vous pour ajouter des objectifs');
+      Alert.alert('Connexion requise', 'Connectez-vous pour ajouter des objectifs', [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Se connecter', onPress: () => setCurrentScreen('auth') }
+      ]);
       return;
     }
+    setLoading(true);
     try {
       const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
-      await axios.post(`${API_URL}/health-goals?${params.toString()}`, { type, name });
-      fetchHealthGoals();
-      fetchExercises();
-      Alert.alert('Succès', 'Objectif ajouté !');
+      console.log('Adding health goal:', type, name);
+      const response = await axios.post(`${API_URL}/health-goals?${params.toString()}`, { type, name });
+      console.log('Goal added:', response.data);
+      await fetchHealthGoals();
+      await fetchExercises();
+      Alert.alert('Succès !', `Objectif "${name}" ajouté ! Découvrez vos exercices recommandés.`);
     } catch (error: any) {
+      console.log('Error adding goal:', error.response?.data || error);
       Alert.alert('Erreur', error.response?.data?.detail || 'Impossible d\'ajouter l\'objectif');
+    } finally {
+      setLoading(false);
     }
   };
 
