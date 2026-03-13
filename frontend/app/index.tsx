@@ -250,6 +250,89 @@ export default function NutriScanApp() {
   const [resetEmail, setResetEmail] = useState('');
   const [resetSent, setResetSent] = useState(false);
 
+  // Check Premium Status from Backend
+  const checkPremiumStatus = async (email: string): Promise<string> => {
+    try {
+      console.log('Checking premium status for:', email);
+      const response = await axios.get(`${API_URL}/check-premium/${encodeURIComponent(email)}`);
+      console.log('Premium status response:', response.data);
+      return response.data.is_premium ? 'premium' : 'free';
+    } catch (error) {
+      console.log('Error checking premium status:', error);
+      return 'free';
+    }
+  };
+
+  // Handle payment return from Stripe
+  const handlePaymentReturn = async () => {
+    try {
+      // Check URL for payment status (web only)
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentStatus = urlParams.get('payment');
+        
+        console.log('Payment status from URL:', paymentStatus);
+        
+        if (paymentStatus === 'success') {
+          // Clear the URL parameters
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+          // Get current user from storage
+          const savedUser = await AsyncStorage.getItem('auth_user');
+          if (savedUser) {
+            const currentUser = JSON.parse(savedUser);
+            console.log('Checking premium for user after payment:', currentUser.email);
+            
+            // Check premium status from backend
+            const premiumStatus = await checkPremiumStatus(currentUser.email);
+            console.log('Premium status after payment:', premiumStatus);
+            
+            if (premiumStatus === 'premium') {
+              // Update user to premium
+              const updatedUser = { ...currentUser, subscription_type: 'premium' };
+              setUser(updatedUser);
+              await AsyncStorage.setItem('auth_user', JSON.stringify(updatedUser));
+              
+              // Show success message
+              Alert.alert(
+                '🎉 Félicitations !',
+                'Votre abonnement Premium a été activé avec succès ! Vous avez maintenant accès à toutes les fonctionnalités.',
+                [{ text: 'Super !', onPress: () => setCurrentScreen('main') }]
+              );
+            } else {
+              // Payment was made but status not yet updated - retry after delay
+              console.log('Premium not yet active, retrying in 3 seconds...');
+              setTimeout(async () => {
+                const retryStatus = await checkPremiumStatus(currentUser.email);
+                if (retryStatus === 'premium') {
+                  const updatedUser = { ...currentUser, subscription_type: 'premium' };
+                  setUser(updatedUser);
+                  await AsyncStorage.setItem('auth_user', JSON.stringify(updatedUser));
+                  Alert.alert(
+                    '🎉 Félicitations !',
+                    'Votre abonnement Premium a été activé avec succès !',
+                    [{ text: 'Super !', onPress: () => setCurrentScreen('main') }]
+                  );
+                } else {
+                  Alert.alert(
+                    'Paiement reçu',
+                    'Votre paiement a été reçu. L\'activation peut prendre quelques minutes. Si le statut Premium n\'apparaît pas, veuillez vous reconnecter.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              }, 3000);
+            }
+          }
+        } else if (paymentStatus === 'cancelled') {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          Alert.alert('Paiement annulé', 'Votre paiement a été annulé.');
+        }
+      }
+    } catch (error) {
+      console.log('Error handling payment return:', error);
+    }
+  };
+
   // Firebase Auth functions
   const loadAuthState = async () => {
     try {
@@ -257,13 +340,21 @@ export default function NutriScanApp() {
       const unsubscribe = onAuthStateChange(async (firebaseUser) => {
         if (firebaseUser) {
           const appUser = formatUser(firebaseUser);
+          // Check premium status from backend
+          const premiumStatus = await checkPremiumStatus(appUser.email);
+          appUser.subscription_type = premiumStatus;
           setUser(appUser);
           await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
         } else {
           // Check local storage as fallback
           const savedUser = await AsyncStorage.getItem('auth_user');
           if (savedUser) {
-            setUser(JSON.parse(savedUser));
+            const parsedUser = JSON.parse(savedUser);
+            // Refresh premium status
+            const premiumStatus = await checkPremiumStatus(parsedUser.email);
+            parsedUser.subscription_type = premiumStatus;
+            setUser(parsedUser);
+            await AsyncStorage.setItem('auth_user', JSON.stringify(parsedUser));
           }
         }
         setAuthLoading(false);
@@ -566,6 +657,8 @@ export default function NutriScanApp() {
     fetchHistory();
     fetchRankings();
     fetchHealingFoods();
+    // Handle payment return from Stripe
+    handlePaymentReturn();
   }, []);
 
   useEffect(() => {
