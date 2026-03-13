@@ -11,11 +11,8 @@ import {
   signInWithCredential,
   updateProfile,
   sendPasswordResetEmail,
-  User,
-  initializeAuth,
-  browserLocalPersistence
+  User
 } from 'firebase/auth';
-import { Platform } from 'react-native';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -31,22 +28,8 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth - simple approach that works on all platforms
-let auth: any;
-try {
-  if (Platform.OS === 'web') {
-    // Web: use browser local persistence
-    auth = initializeAuth(app, {
-      persistence: browserLocalPersistence
-    });
-  } else {
-    // Mobile: use default auth (AsyncStorage is handled by the app separately)
-    auth = getAuth(app);
-  }
-} catch (e) {
-  // If already initialized, get the existing instance
-  auth = getAuth(app);
-}
+// Initialize Auth - use getAuth which works on all platforms
+const auth = getAuth(app);
 
 const googleProvider = new GoogleAuthProvider();
 
