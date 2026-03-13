@@ -218,6 +218,31 @@ async def get_current_user(request: Request, credentials: HTTPAuthorizationCrede
                 return User(**user_doc)
     return None
 
+# Firebase user authentication - checks premium status from firebase_users collection
+async def get_firebase_premium_user(request: Request) -> Optional[User]:
+    """Get user from firebase_users collection using email from query params or headers"""
+    email = request.query_params.get('email') or request.headers.get('x-user-email')
+    user_id = request.query_params.get('user_id') or request.headers.get('x-user-id')
+    
+    if not email:
+        return None
+    
+    # Check premium status in firebase_users collection
+    firebase_user = await db.firebase_users.find_one({"email": email})
+    
+    if firebase_user:
+        subscription_type = firebase_user.get("subscription_type", "free")
+    else:
+        subscription_type = "free"
+    
+    # Return a User object with the data we have
+    return User(
+        user_id=user_id or email,
+        email=email,
+        name=email.split('@')[0],
+        subscription_type=subscription_type
+    )
+
 def calculate_health_score(product_data: dict) -> int:
     score = 50
     nutri_score_map = {'a': 100, 'b': 80, 'c': 60, 'd': 40, 'e': 20}
@@ -853,16 +878,25 @@ async def search_healing_foods(condition: str):
 
 # ============== WEEKLY MENU GENERATION ==============
 @api_router.post("/generate-menu")
-async def generate_weekly_menu(user: User = Depends(get_current_user)):
+async def generate_weekly_menu(request: Request):
     """Generate personalized weekly meal plan using AI"""
+    # Get user from Firebase authentication
+    user = await get_firebase_premium_user(request)
+    
     if not user:
-        raise HTTPException(status_code=401, detail="Connexion requise")
+        raise HTTPException(status_code=401, detail="Connexion requise. Ajoutez votre email en paramètre: ?email=votre@email.com")
     
     if user.subscription_type != "premium":
         raise HTTPException(status_code=403, detail="Fonctionnalité Premium requise")
     
     # Get user's scan history for personalization
     scans = await db.scan_history.find({"user_id": user.user_id}).sort('timestamp', -1).limit(20).to_list(20)
+    # Also try with email as user_id
+    if not scans:
+        scans = await db.scan_history.find({"user_id": user.email}).sort('timestamp', -1).limit(20).to_list(20)
+    # Also check general history
+    if not scans:
+        scans = await db.scan_history.find().sort('timestamp', -1).limit(10).to_list(10)
     
     products_context = ""
     if scans:

@@ -809,13 +809,17 @@ export default function NutriScanApp() {
     }
     setMenuLoading(true);
     try {
-      const idToken = await getIdToken();
-      const headers = idToken ? { Authorization: `Bearer ${idToken}` } : {};
-      const response = await axios.post(`${API_URL}/generate-menu`, {}, { headers });
+      // Send email and user_id as query params for Firebase authentication
+      const params = new URLSearchParams({
+        email: user.email,
+        user_id: user.user_id
+      });
+      const response = await axios.post(`${API_URL}/generate-menu?${params.toString()}`, {});
       setWeeklyMenu(response.data);
       setCurrentScreen('menu');
     } catch (error: any) {
-      Alert.alert('Erreur', error.response?.data?.detail || 'Impossible de générer le menu');
+      console.log('Menu generation error:', error.response?.data);
+      Alert.alert('Erreur', error.response?.data?.detail || 'Impossible de générer le menu. Veuillez réessayer.');
     } finally {
       setMenuLoading(false);
     }
