@@ -952,6 +952,104 @@ async def generate_weekly_menu(request: Request):
         logger.error(f"Menu generation error: {str(e)}")
         raise HTTPException(status_code=500, detail="Erreur lors de la génération du menu")
 
+# ============== AI COACH ==============
+class CoachMessage(BaseModel):
+    message: str
+    context: Optional[Dict[str, Any]] = None
+
+@api_router.post("/coach")
+async def ai_coach_chat(request: Request, body: CoachMessage):
+    """AI Coach for personalized nutrition advice - Premium feature"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    if user.subscription_type != "premium":
+        raise HTTPException(status_code=403, detail="Fonctionnalité Premium requise")
+    
+    try:
+        # Get user's scan history for context
+        history = await db.scan_history.find({"user_id": user.email}).sort('timestamp', -1).limit(10).to_list(10)
+        history_context = ""
+        if history:
+            history_context = "\n".join([f"- {h.get('product_name', 'Produit')} (Score: {h.get('health_score', 'N/A')})" for h in history])
+        
+        # Get user's health goals
+        goals = await db.health_goals.find({"user_id": user.email}).to_list(10)
+        goals_context = ""
+        if goals:
+            goals_context = ", ".join([g.get('name', '') for g in goals])
+        
+        # Build context for AI
+        system_prompt = f"""Tu es NutriCoach, un coach nutrition IA expert et bienveillant pour l'application NutriScan.
+
+PROFIL UTILISATEUR:
+- Email: {user.email}
+- Objectifs santé: {goals_context if goals_context else 'Non définis'}
+- Derniers produits scannés:
+{history_context if history_context else '- Aucun historique récent'}
+
+TON RÔLE:
+- Donner des conseils nutritionnels personnalisés et pratiques
+- Répondre aux questions sur l'alimentation et la santé
+- Suggérer des alternatives plus saines basées sur l'historique
+- Motiver et encourager l'utilisateur dans ses objectifs
+- Expliquer les scores nutritionnels et les additifs
+
+RÈGLES:
+- Réponds toujours en français
+- Sois concis mais informatif (max 200 mots)
+- Utilise des emojis pour rendre le message plus engageant
+- Ne prescris jamais de médicaments ou traitements médicaux
+- Recommande de consulter un professionnel pour les problèmes de santé graves
+- Termine toujours par une question ou une suggestion actionnable"""
+
+        # Use Emergent LLM
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            model="gemini-2.0-flash"
+        )
+        
+        response = await chat.send_async(
+            system_prompt,
+            [UserMessage(text=body.message)]
+        )
+        
+        # Save conversation to DB
+        conversation = {
+            "id": str(uuid.uuid4()),
+            "user_id": user.email,
+            "user_message": body.message,
+            "coach_response": response.text,
+            "timestamp": datetime.now(timezone.utc)
+        }
+        await db.coach_conversations.insert_one(conversation)
+        
+        return {
+            "response": response.text,
+            "conversation_id": conversation["id"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Coach error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erreur du coach IA")
+
+@api_router.get("/coach/history")
+async def get_coach_history(request: Request):
+    """Get user's chat history with AI Coach"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    conversations = await db.coach_conversations.find(
+        {"user_id": user.email}, 
+        {"_id": 0}
+    ).sort('timestamp', -1).limit(20).to_list(20)
+    
+    return conversations
+
 @api_router.get("/my-menus")
 async def get_my_menus(user: User = Depends(get_current_user)):
     """Get user's generated menus"""

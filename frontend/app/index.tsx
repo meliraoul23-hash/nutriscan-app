@@ -207,7 +207,7 @@ export default function NutriScanApp() {
 
   // App state
   const [currentTab, setCurrentTab] = useState<'home' | 'history' | 'search' | 'rankings' | 'profile'>('home');
-  const [currentScreen, setCurrentScreen] = useState<'main' | 'scanner' | 'product' | 'auth' | 'compare' | 'goals' | 'menu' | 'favorites' | 'exercises'>('main');
+  const [currentScreen, setCurrentScreen] = useState<'main' | 'scanner' | 'product' | 'auth' | 'compare' | 'goals' | 'menu' | 'favorites' | 'exercises' | 'coach'>('main');
   
   // Data state
   const [product, setProduct] = useState<Product | null>(null);
@@ -230,6 +230,11 @@ export default function NutriScanApp() {
   const [goalAlerts, setGoalAlerts] = useState<any[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
   const [exercises, setExercises] = useState<any[]>([]);
+  
+  // Coach AI state
+  const [coachMessages, setCoachMessages] = useState<any[]>([]);
+  const [coachInput, setCoachInput] = useState('');
+  const [coachLoading, setCoachLoading] = useState(false);
   
   // Offline cache
   const [cachedProducts, setCachedProducts] = useState<{[key: string]: Product}>({});
@@ -891,6 +896,37 @@ export default function NutriScanApp() {
       Alert.alert('Erreur', error.response?.data?.detail || 'Impossible de générer le menu. Veuillez réessayer.');
     } finally {
       setMenuLoading(false);
+    }
+  };
+
+  // AI Coach - Send message
+  const sendCoachMessage = async () => {
+    if (!coachInput.trim()) return;
+    if (!user) {
+      Alert.alert('Connexion requise', 'Connectez-vous pour utiliser le coach');
+      setCurrentScreen('auth');
+      return;
+    }
+    if (user.subscription_type !== 'premium') {
+      Alert.alert('Premium requis', 'Le coach IA est réservé aux membres Premium');
+      setCurrentScreen('premium');
+      return;
+    }
+    
+    const userMessage = coachInput.trim();
+    setCoachInput('');
+    setCoachMessages(prev => [...prev, { type: 'user', text: userMessage }]);
+    setCoachLoading(true);
+    
+    try {
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      const response = await axios.post(`${API_URL}/coach?${params.toString()}`, { message: userMessage });
+      setCoachMessages(prev => [...prev, { type: 'coach', text: response.data.response }]);
+    } catch (error: any) {
+      console.log('Coach error:', error.response?.data);
+      setCoachMessages(prev => [...prev, { type: 'coach', text: '❌ Désolé, une erreur est survenue. Réessayez dans un moment.' }]);
+    } finally {
+      setCoachLoading(false);
     }
   };
 
@@ -1651,6 +1687,12 @@ export default function NutriScanApp() {
                   </>
                 )}
               </TouchableOpacity>
+              
+              {/* Coach IA Button */}
+              <TouchableOpacity style={styles.coachButton} onPress={() => setCurrentScreen('coach')}>
+                <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
+                <Text style={styles.coachButtonText}>Coach Nutrition IA</Text>
+              </TouchableOpacity>
             ) : (
               <View style={styles.premiumFeatureLocked}>
                 <Ionicons name="lock-closed" size={20} color={colors.textSecondary} />
@@ -1666,10 +1708,10 @@ export default function NutriScanApp() {
                 <Text style={styles.premiumPromoTitle}>Passez à Premium</Text>
               </View>
               <Text style={styles.premiumPromoText}>
-                • Menus hebdomadaires personnalisés IA{'\n'}
-                • Objectifs santé personnalisés{'\n'}
-                • Comparaison de produits{'\n'}
-                • Support prioritaire
+                • Coach nutrition IA personnalisé{'\n'}
+                • Menus hebdomadaires personnalisés{'\n'}
+                • Objectifs santé + exercices{'\n'}
+                • Comparaison de produits
               </Text>
               <TouchableOpacity style={styles.premiumButton} onPress={() => setCurrentScreen('premium')}>
                 <Text style={styles.premiumButtonText}>Voir les offres Premium</Text>
@@ -1828,6 +1870,101 @@ export default function NutriScanApp() {
         </>
       )}
     </ScrollView>
+  );
+
+  // AI Coach Screen
+  const renderCoachScreen = () => (
+    <KeyboardAvoidingView 
+      style={{ flex: 1, backgroundColor: colors.background }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <View style={styles.coachHeader}>
+        <TouchableOpacity onPress={goHome}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <View style={styles.coachHeaderTitle}>
+          <Ionicons name="chatbubble-ellipses" size={24} color={colors.primary} />
+          <Text style={styles.screenTitle}>NutriCoach IA</Text>
+        </View>
+        <TouchableOpacity onPress={() => setCoachMessages([])}>
+          <Ionicons name="trash-outline" size={22} color={colors.textSecondary} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.coachMessagesContainer} contentContainerStyle={styles.coachMessagesContent}>
+        {/* Welcome message */}
+        {coachMessages.length === 0 && (
+          <View style={styles.coachWelcome}>
+            <View style={styles.coachAvatarLarge}>
+              <Ionicons name="leaf" size={48} color={colors.primary} />
+            </View>
+            <Text style={styles.coachWelcomeTitle}>Bonjour ! Je suis NutriCoach 🥗</Text>
+            <Text style={styles.coachWelcomeText}>
+              Votre coach nutrition personnel propulsé par l'IA. Posez-moi vos questions sur l'alimentation, les régimes, ou demandez des conseils personnalisés !
+            </Text>
+            <View style={styles.coachSuggestions}>
+              <TouchableOpacity style={styles.coachSuggestion} onPress={() => setCoachInput('Comment améliorer mon alimentation ?')}>
+                <Text style={styles.coachSuggestionText}>💡 Comment améliorer mon alimentation ?</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.coachSuggestion} onPress={() => setCoachInput('Quels sont les meilleurs aliments pour perdre du poids ?')}>
+                <Text style={styles.coachSuggestionText}>⚖️ Aliments pour perdre du poids</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.coachSuggestion} onPress={() => setCoachInput('Analyse mes derniers produits scannés')}>
+                <Text style={styles.coachSuggestionText}>📊 Analyse mes produits scannés</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Messages */}
+        {coachMessages.map((msg, index) => (
+          <View key={index} style={msg.type === 'user' ? styles.coachUserMessage : styles.coachBotMessage}>
+            {msg.type === 'coach' && (
+              <View style={styles.coachAvatar}>
+                <Ionicons name="leaf" size={20} color={colors.primary} />
+              </View>
+            )}
+            <View style={[styles.coachMessageBubble, msg.type === 'user' ? styles.coachUserBubble : styles.coachBotBubble]}>
+              <Text style={[styles.coachMessageText, msg.type === 'user' && { color: '#FFF' }]}>{msg.text}</Text>
+            </View>
+          </View>
+        ))}
+
+        {/* Loading indicator */}
+        {coachLoading && (
+          <View style={styles.coachBotMessage}>
+            <View style={styles.coachAvatar}>
+              <Ionicons name="leaf" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.coachTypingBubble}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.coachTypingText}>En train de réfléchir...</Text>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Input */}
+      <View style={styles.coachInputContainer}>
+        <TextInput
+          style={styles.coachInput}
+          placeholder="Posez votre question..."
+          placeholderTextColor={colors.textSecondary}
+          value={coachInput}
+          onChangeText={setCoachInput}
+          multiline
+          maxLength={500}
+        />
+        <TouchableOpacity 
+          style={[styles.coachSendButton, !coachInput.trim() && { opacity: 0.5 }]} 
+          onPress={sendCoachMessage}
+          disabled={!coachInput.trim() || coachLoading}
+        >
+          <Ionicons name="send" size={20} color="#FFF" />
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
   );
 
   // Favorites Screen
@@ -2691,6 +2828,7 @@ export default function NutriScanApp() {
       {currentScreen === 'product' && renderProductScreen()}
       {currentScreen === 'goals' && renderGoalsScreen()}
       {currentScreen === 'exercises' && renderExercisesScreen()}
+      {currentScreen === 'coach' && renderCoachScreen()}
       {currentScreen === 'favorites' && renderFavoritesScreen()}
       {currentScreen === 'compare' && renderCompareScreen()}
       {currentScreen === 'menu' && renderMenuScreen()}
@@ -3101,6 +3239,8 @@ const styles = StyleSheet.create({
   // Menu Button
   menuButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 12, marginTop: 12 },
   menuButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  coachButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#9C27B0', paddingVertical: 14, borderRadius: 12, marginTop: 12 },
+  coachButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
   premiumFeatureLocked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: colors.surface, borderRadius: 12 },
   premiumFeatureText: { fontSize: 14, color: colors.textSecondary, marginLeft: 8 },
 
@@ -3140,6 +3280,31 @@ const styles = StyleSheet.create({
   exerciseDetails: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
   exerciseDetail: { flexDirection: 'row', alignItems: 'center', marginRight: 16, marginTop: 4 },
   exerciseDetailText: { fontSize: 12, color: colors.textSecondary, marginLeft: 4 },
+
+  // Coach AI Screen
+  coachHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 50, paddingBottom: 16, backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  coachHeaderTitle: { flexDirection: 'row', alignItems: 'center' },
+  coachMessagesContainer: { flex: 1, backgroundColor: colors.background },
+  coachMessagesContent: { padding: 16, paddingBottom: 100 },
+  coachWelcome: { alignItems: 'center', paddingVertical: 40 },
+  coachAvatarLarge: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  coachWelcomeTitle: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 8 },
+  coachWelcomeText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20 },
+  coachSuggestions: { marginTop: 24, width: '100%' },
+  coachSuggestion: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, marginBottom: 10 },
+  coachSuggestionText: { fontSize: 14, color: colors.text },
+  coachUserMessage: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 },
+  coachBotMessage: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
+  coachAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  coachMessageBubble: { maxWidth: '80%', padding: 12, borderRadius: 16 },
+  coachUserBubble: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
+  coachBotBubble: { backgroundColor: colors.surface, borderBottomLeftRadius: 4 },
+  coachMessageText: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  coachTypingBubble: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 12, borderRadius: 16 },
+  coachTypingText: { fontSize: 13, color: colors.textSecondary, marginLeft: 8 },
+  coachInputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.surface },
+  coachInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: colors.text, maxHeight: 100 },
+  coachSendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
 
   // Goal Type Selection
   goalTypeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.surface },
