@@ -1844,10 +1844,11 @@ async def get_exercises(request: Request):
 
 # ============== VOICE TRANSCRIPTION ==============
 from fastapi import UploadFile, File
+from emergentintegrations.llm.openai import OpenAISpeechToText
 
 @api_router.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
-    """Transcribe audio to text using OpenAI Whisper via Emergent"""
+    """Transcribe audio to text using OpenAI Whisper via Emergent Integrations"""
     import tempfile
     import os
     
@@ -1870,31 +1871,20 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         
         logger.info(f"Saved audio to {temp_path}")
         
-        # Use Emergent LLM endpoint for Whisper
-        async with httpx.AsyncClient(timeout=120.0) as http_client:
-            with open(temp_path, "rb") as f:
-                files = {"file": ("recording.m4a", f, "audio/mp4")}
-                data = {"model": "whisper-1", "language": "fr"}
-                
-                # Try Emergent endpoint first
-                response = await http_client.post(
-                    "https://llm.emergentagi.com/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {EMERGENT_LLM_KEY}"},
-                    files=files,
-                    data=data
-                )
-                
-                logger.info(f"Whisper response: {response.status_code}")
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    text = result.get("text", "").strip()
-                    logger.info(f"Transcription OK: '{text[:80] if text else 'empty'}...'")
-                    return {"text": text, "success": bool(text)}
-                else:
-                    error_msg = response.text[:300]
-                    logger.error(f"Whisper error: {error_msg}")
-                    return {"text": "", "success": False, "error": error_msg}
+        # Use Emergent Integrations for Whisper STT
+        stt = OpenAISpeechToText(api_key=EMERGENT_LLM_KEY)
+        
+        with open(temp_path, "rb") as audio_file:
+            response = await stt.transcribe(
+                file=audio_file,
+                model="whisper-1",
+                language="fr",
+                response_format="json"
+            )
+        
+        text = response.text.strip() if response and response.text else ""
+        logger.info(f"Transcription OK: '{text[:80] if text else 'empty'}...'")
+        return {"text": text, "success": bool(text)}
                     
     except Exception as e:
         logger.error(f"Transcription error: {str(e)}")

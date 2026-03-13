@@ -1,5 +1,5 @@
-// Coach AI - Conversation Vocale avec détection automatique du silence
-import React, { useState, useRef, useEffect } from 'react';
+// Coach AI - Conversation Vocale Complète avec Réponse Vocale
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,7 +25,7 @@ import { sendCoachMessageAPI } from '../src/services/api';
 import { colors } from '../src/styles/colors';
 import { CoachMessage } from '../src/types';
 
-type State = 'idle' | 'listening' | 'processing' | 'speaking';
+type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking';
 
 export default function CoachScreen() {
   const router = useRouter();
@@ -32,123 +33,115 @@ export default function CoachScreen() {
   const { coachMessages, setCoachMessages } = useApp();
   const scrollViewRef = useRef<ScrollView>(null);
   
-  const [state, setState] = useState<State>('idle');
+  const [voiceState, setVoiceState] = useState<VoiceState>('idle');
   const [inputText, setInputText] = useState('');
   const [permissionGranted, setPermissionGranted] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   
   const recordingRef = useRef<Audio.Recording | null>(null);
-  const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const stateRef = useRef<VoiceState>('idle');
+  
+  // Sync stateRef with voiceState
+  useEffect(() => {
+    stateRef.current = voiceState;
+  }, [voiceState]);
 
-  // Setup
+  // Setup audio permissions
   useEffect(() => {
     const setup = async () => {
-      const { status } = await Audio.requestPermissionsAsync();
-      setPermissionGranted(status === 'granted');
-      if (status === 'granted') {
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
-        });
+      try {
+        const { status } = await Audio.requestPermissionsAsync();
+        setPermissionGranted(status === 'granted');
+        if (status === 'granted') {
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+          });
+        }
+      } catch (error) {
+        console.log('Audio setup error:', error);
       }
     };
     setup();
+    
     return () => {
-      Speech.stop();
       stopEverything();
     };
   }, []);
 
-  // Pulse animation
+  // Pulse animation for listening state
   useEffect(() => {
-    if (state === 'listening') {
+    if (voiceState === 'listening') {
       Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.2, duration: 500, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.3, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
         ])
       ).start();
     } else {
       pulseAnim.setValue(1);
     }
-  }, [state]);
+  }, [voiceState]);
 
-  const stopEverything = () => {
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+  const stopEverything = useCallback(async () => {
+    Speech.stop();
+    setIsSpeaking(false);
+    
     if (recordingRef.current) {
-      recordingRef.current.stopAndUnloadAsync().catch(() => {});
+      try {
+        await recordingRef.current.stopAndUnloadAsync();
+      } catch (e) {
+        // Recording may already be stopped
+      }
       recordingRef.current = null;
     }
-  };
+  }, []);
 
-  // Start listening
-  const startListening = async () => {
-    if (!permissionGranted || state !== 'idle') return;
+  // Start voice recording
+  const startListening = useCallback(async () => {
+    if (!permissionGranted) {
+      Alert.alert('Permission requise', 'Veuillez autoriser l\'accès au microphone');
+      return;
+    }
+    
+    if (stateRef.current !== 'idle') {
+      console.log('Not idle, current state:', stateRef.current);
+      return;
+    }
 
     try {
-      stopEverything();
-
+      await stopEverything();
+      
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        (status) => {
-          // Check audio levels for silence detection
-          if (status.isRecording && status.metering !== undefined) {
-            // If audio level is very low for a while, auto-stop
-            // metering is in dB, typically -160 to 0
-            if (status.metering < -45) {
-              // Start silence timer if not already started
-              if (!silenceTimerRef.current) {
-                silenceTimerRef.current = setTimeout(() => {
-                  // 2 seconds of silence detected, auto-send
-                  processRecording();
-                }, 2000);
-              }
-            } else {
-              // Sound detected, reset timer
-              if (silenceTimerRef.current) {
-                clearTimeout(silenceTimerRef.current);
-                silenceTimerRef.current = null;
-              }
-            }
-          }
-        },
-        100 // Update every 100ms
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
       );
-
+      
       recordingRef.current = recording;
-      setState('listening');
-
-      // Safety timeout - auto-stop after 30 seconds
-      setTimeout(() => {
-        if (state === 'listening') {
-          processRecording();
-        }
-      }, 30000);
+      setVoiceState('listening');
+      console.log('Recording started');
 
     } catch (error) {
-      console.log('Start error:', error);
-      setState('idle');
+      console.log('Start recording error:', error);
+      setVoiceState('idle');
+      Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement');
     }
-  };
+  }, [permissionGranted, stopEverything]);
 
-  // Process recording
-  const processRecording = async () => {
-    if (!recordingRef.current || state !== 'listening') return;
-
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
+  // Stop recording and process
+  const stopAndProcess = useCallback(async () => {
+    if (!recordingRef.current || stateRef.current !== 'listening') {
+      console.log('Cannot stop: no recording or wrong state');
+      return;
     }
 
-    setState('processing');
+    setVoiceState('processing');
+    console.log('Stopping recording...');
 
     try {
       await recordingRef.current.stopAndUnloadAsync();
@@ -158,17 +151,25 @@ export default function CoachScreen() {
       recordingRef.current = null;
 
       if (!uri) {
-        setState('idle');
+        console.log('No audio URI');
+        setVoiceState('idle');
         return;
       }
 
-      // Transcribe
+      console.log('Audio URI:', uri);
+
+      // Transcribe audio
       const backendUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL 
         || process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
       const formData = new FormData();
-      formData.append('audio', { uri, type: 'audio/m4a', name: 'recording.m4a' } as any);
+      formData.append('audio', { 
+        uri, 
+        type: 'audio/m4a', 
+        name: 'recording.m4a' 
+      } as any);
 
+      console.log('Sending to transcription...');
       const response = await fetch(`${backendUrl}/api/transcribe`, {
         method: 'POST',
         body: formData,
@@ -176,35 +177,40 @@ export default function CoachScreen() {
       });
 
       const data = await response.json();
-      console.log('Transcription:', data);
+      console.log('Transcription response:', data);
 
       if (data.success && data.text && user) {
-        await sendAndSpeak(data.text);
+        // Send to AI and speak response
+        await sendMessageAndSpeak(data.text);
       } else {
-        // Didn't understand
-        setState('speaking');
-        Speech.speak("Je n'ai pas compris. Pouvez-vous répéter ?", {
+        // Transcription failed - tell user
+        setVoiceState('speaking');
+        setIsSpeaking(true);
+        Speech.speak("Je n'ai pas compris. Veuillez réessayer.", {
           language: 'fr-FR',
           rate: 0.9,
           onDone: () => {
-            setState('idle');
-            // Auto-restart
-            setTimeout(startListening, 800);
+            setIsSpeaking(false);
+            setVoiceState('idle');
           },
-          onError: () => setState('idle'),
+          onError: () => {
+            setIsSpeaking(false);
+            setVoiceState('idle');
+          },
         });
       }
     } catch (error) {
       console.log('Process error:', error);
-      setState('idle');
+      setVoiceState('idle');
+      Alert.alert('Erreur', 'Erreur lors du traitement audio');
     }
-  };
+  }, [user]);
 
-  // Send message and speak response
-  const sendAndSpeak = async (text: string) => {
+  // Send message to AI coach and speak the response
+  const sendMessageAndSpeak = useCallback(async (text: string, speakResponse: boolean = true) => {
     if (!user) return;
 
-    // Add user message
+    // Add user message to chat
     const userMsg: CoachMessage = { type: 'user', text };
     setCoachMessages((prev: CoachMessage[]) => [...prev, userMsg]);
     scrollToEnd();
@@ -212,65 +218,106 @@ export default function CoachScreen() {
     try {
       // Get AI response
       const aiResponse = await sendCoachMessageAPI(text, user.email, user.user_id);
+      
+      // Add AI response to chat
       const coachMsg: CoachMessage = { type: 'coach', text: aiResponse };
       setCoachMessages((prev: CoachMessage[]) => [...prev, coachMsg]);
       scrollToEnd();
 
-      // Speak
-      setState('speaking');
-      Speech.speak(aiResponse, {
-        language: 'fr-FR',
-        rate: 0.9,
-        onDone: () => {
-          setState('idle');
-          // Auto-restart listening after speaking
-          setTimeout(startListening, 800);
-        },
-        onError: () => setState('idle'),
-      });
+      if (speakResponse) {
+        // Speak the response
+        setVoiceState('speaking');
+        setIsSpeaking(true);
+        
+        Speech.speak(aiResponse, {
+          language: 'fr-FR',
+          rate: 0.9,
+          pitch: 1.0,
+          onDone: () => {
+            console.log('Speech finished');
+            setIsSpeaking(false);
+            setVoiceState('idle');
+          },
+          onError: (err) => {
+            console.log('Speech error:', err);
+            setIsSpeaking(false);
+            setVoiceState('idle');
+          },
+        });
+      } else {
+        setVoiceState('idle');
+      }
     } catch (error) {
       console.log('Send error:', error);
-      setState('idle');
+      setVoiceState('idle');
+      Alert.alert('Erreur', 'Impossible d\'obtenir la réponse du coach');
     }
-  };
+  }, [user, setCoachMessages]);
 
-  // Send text message
-  const sendTextMessage = async () => {
-    if (!inputText.trim() || !user || state !== 'idle') return;
+  // Send text message (without voice)
+  const sendTextMessage = useCallback(async () => {
+    if (!inputText.trim() || !user || voiceState !== 'idle') return;
     
     const text = inputText.trim();
     setInputText('');
+    setVoiceState('processing');
     
-    setState('processing');
-    await sendAndSpeak(text);
-  };
+    // Send and speak response
+    await sendMessageAndSpeak(text, true);
+  }, [inputText, user, voiceState, sendMessageAndSpeak]);
 
-  // Stop conversation
-  const stopConversation = () => {
-    stopEverything();
-    Speech.stop();
-    setState('idle');
-  };
+  // Cancel current operation
+  const cancelOperation = useCallback(async () => {
+    await stopEverything();
+    setVoiceState('idle');
+  }, [stopEverything]);
+
+  // Replay a message
+  const replayMessage = useCallback((text: string) => {
+    if (isSpeaking) {
+      Speech.stop();
+      setIsSpeaking(false);
+      return;
+    }
+    
+    setIsSpeaking(true);
+    Speech.speak(text, {
+      language: 'fr-FR',
+      rate: 0.9,
+      onDone: () => setIsSpeaking(false),
+      onError: () => setIsSpeaking(false),
+    });
+  }, [isSpeaking]);
 
   const scrollToEnd = () => {
     setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
   };
 
   const getStatusText = () => {
-    switch (state) {
-      case 'listening': return "🎤 Je vous écoute... (parlez, j'enverrai automatiquement)";
-      case 'processing': return "🔄 Analyse...";
-      case 'speaking': return "🗣️ Je réponds...";
+    switch (voiceState) {
+      case 'listening': return "🎤 Je vous écoute... Appuyez à nouveau pour envoyer";
+      case 'processing': return "🔄 Analyse en cours...";
+      case 'speaking': return "🗣️ Je vous réponds...";
       default: return "";
     }
   };
 
   const getStatusColor = () => {
-    switch (state) {
+    switch (voiceState) {
       case 'listening': return '#E53935';
-      case 'processing': return '#9C27B0';
+      case 'processing': return '#FF9800';
       case 'speaking': return colors.primary;
       default: return 'transparent';
+    }
+  };
+
+  const handleMicPress = () => {
+    if (voiceState === 'idle') {
+      startListening();
+    } else if (voiceState === 'listening') {
+      stopAndProcess();
+    } else if (voiceState === 'speaking') {
+      cancelOperation();
     }
   };
 
@@ -278,23 +325,28 @@ export default function CoachScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => { stopConversation(); router.back(); }}>
+        <TouchableOpacity onPress={() => { cancelOperation(); router.back(); }} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Coach IA Vocal</Text>
-        {state !== 'idle' ? (
-          <TouchableOpacity onPress={stopConversation}>
+        <Text style={styles.headerTitle}>Coach Nutrition IA</Text>
+        {voiceState !== 'idle' ? (
+          <TouchableOpacity onPress={cancelOperation} style={styles.stopBtn}>
             <Ionicons name="stop-circle" size={28} color={colors.error} />
           </TouchableOpacity>
         ) : <View style={{ width: 28 }} />}
       </View>
 
       {/* Status Bar */}
-      {state !== 'idle' && (
+      {voiceState !== 'idle' && (
         <View style={[styles.statusBar, { backgroundColor: getStatusColor() }]}>
-          {state === 'listening' && <View style={styles.recordingDot} />}
-          {state === 'processing' && <ActivityIndicator size="small" color="#FFF" />}
-          {state === 'speaking' && <Ionicons name="volume-high" size={18} color="#FFF" />}
+          {voiceState === 'listening' && (
+            <View style={styles.recordingIndicator}>
+              <View style={styles.recordingDot} />
+              <Text style={styles.recordingText}>REC</Text>
+            </View>
+          )}
+          {voiceState === 'processing' && <ActivityIndicator size="small" color="#FFF" />}
+          {voiceState === 'speaking' && <Ionicons name="volume-high" size={18} color="#FFF" />}
           <Text style={styles.statusText}>{getStatusText()}</Text>
         </View>
       )}
@@ -308,22 +360,24 @@ export default function CoachScreen() {
           ref={scrollViewRef}
           style={styles.messages}
           contentContainerStyle={styles.messagesContent}
+          keyboardShouldPersistTaps="handled"
         >
           {coachMessages.length === 0 ? (
             <View style={styles.welcome}>
               <View style={styles.welcomeIcon}>
                 <Ionicons name="chatbubbles" size={50} color="#9C27B0" />
               </View>
-              <Text style={styles.welcomeTitle}>Coach Nutrition Vocal</Text>
+              <Text style={styles.welcomeTitle}>Votre Coach Personnel</Text>
               <Text style={styles.welcomeText}>
-                Appuyez sur le micro et parlez.{'\n'}
-                Je détecte automatiquement quand vous avez fini{'\n'}
-                et je vous réponds à voix haute !
+                Posez-moi vos questions sur la nutrition !{'\n\n'}
+                <Text style={styles.instructionBold}>🎤 Appuyez sur le micro</Text> pour parler{'\n'}
+                <Text style={styles.instructionBold}>🎤 Appuyez à nouveau</Text> pour envoyer{'\n'}
+                <Text style={styles.instructionBold}>🔊 J'écoute et je réponds à voix haute</Text>
               </Text>
               {!permissionGranted && (
                 <View style={styles.warning}>
                   <Ionicons name="alert-circle" size={20} color={colors.warning} />
-                  <Text style={styles.warningText}>Activez le microphone</Text>
+                  <Text style={styles.warningText}>Microphone requis pour le vocal</Text>
                 </View>
               )}
             </View>
@@ -340,10 +394,14 @@ export default function CoachScreen() {
                 </View>
                 {msg.type === 'coach' && (
                   <TouchableOpacity 
-                    onPress={() => Speech.speak(msg.text, { language: 'fr-FR', rate: 0.9 })}
+                    onPress={() => replayMessage(msg.text)}
                     style={styles.replayBtn}
                   >
-                    <Ionicons name="volume-high" size={16} color={colors.primary} />
+                    <Ionicons 
+                      name={isSpeaking ? "volume-mute" : "volume-high"} 
+                      size={18} 
+                      color={colors.primary} 
+                    />
                   </TouchableOpacity>
                 )}
               </View>
@@ -353,27 +411,27 @@ export default function CoachScreen() {
 
         {/* Input Area */}
         <View style={styles.inputArea}>
-          {/* Mic Button */}
+          {/* Microphone Button */}
           <TouchableOpacity
-            onPress={state === 'idle' ? startListening : stopConversation}
-            disabled={state === 'processing'}
+            onPress={handleMicPress}
+            disabled={voiceState === 'processing'}
             style={styles.micBtnContainer}
           >
             <Animated.View style={[
               styles.micBtn,
-              state === 'listening' && styles.micBtnRecording,
-              state === 'processing' && styles.micBtnProcessing,
-              state === 'speaking' && styles.micBtnSpeaking,
-              { transform: [{ scale: state === 'listening' ? pulseAnim : 1 }] }
+              voiceState === 'listening' && styles.micBtnRecording,
+              voiceState === 'processing' && styles.micBtnProcessing,
+              voiceState === 'speaking' && styles.micBtnSpeaking,
+              { transform: [{ scale: voiceState === 'listening' ? pulseAnim : 1 }] }
             ]}>
-              {state === 'processing' ? (
+              {voiceState === 'processing' ? (
                 <ActivityIndicator color="#FFF" size="small" />
+              ) : voiceState === 'speaking' ? (
+                <Ionicons name="volume-high" size={26} color="#FFF" />
+              ) : voiceState === 'listening' ? (
+                <Ionicons name="stop" size={26} color="#FFF" />
               ) : (
-                <Ionicons 
-                  name={state === 'idle' ? 'mic' : state === 'listening' ? 'mic' : 'volume-high'} 
-                  size={28} 
-                  color="#FFF" 
-                />
+                <Ionicons name="mic" size={26} color="#FFF" />
               )}
             </Animated.View>
           </TouchableOpacity>
@@ -381,18 +439,21 @@ export default function CoachScreen() {
           {/* Text Input */}
           <TextInput
             style={styles.textInput}
-            placeholder="Ou écrivez ici..."
+            placeholder="Ou écrivez votre question..."
+            placeholderTextColor="#999"
             value={inputText}
             onChangeText={setInputText}
             multiline
-            editable={state === 'idle'}
+            editable={voiceState === 'idle'}
+            onSubmitEditing={sendTextMessage}
+            returnKeyType="send"
           />
           
           {/* Send Button */}
           <TouchableOpacity
             onPress={sendTextMessage}
-            disabled={!inputText.trim() || state !== 'idle'}
-            style={[styles.sendBtn, (!inputText.trim() || state !== 'idle') && styles.sendBtnDisabled]}
+            disabled={!inputText.trim() || voiceState !== 'idle'}
+            style={[styles.sendBtn, (!inputText.trim() || voiceState !== 'idle') && styles.sendBtnDisabled]}
           >
             <Ionicons name="send" size={20} color="#FFF" />
           </TouchableOpacity>
@@ -403,35 +464,207 @@ export default function CoachScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFF' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
-  statusBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, gap: 8 },
-  recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFF' },
-  statusText: { color: '#FFF', fontSize: 13, fontWeight: '600' },
-  messages: { flex: 1 },
-  messagesContent: { padding: 16, paddingBottom: 20 },
-  welcome: { alignItems: 'center', paddingVertical: 40 },
-  welcomeIcon: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#F3E5F5', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  welcomeTitle: { fontSize: 24, fontWeight: '700', color: colors.text, marginBottom: 12 },
-  welcomeText: { fontSize: 15, color: colors.textSecondary, textAlign: 'center', lineHeight: 24 },
-  warning: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF3E0', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, marginTop: 16 },
-  warningText: { color: colors.warning, fontSize: 13, fontWeight: '600', marginLeft: 8 },
-  userMsg: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 14 },
-  coachMsg: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
-  avatar: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F3E5F5', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
-  bubble: { maxWidth: '75%', padding: 12, borderRadius: 16 },
-  userBubble: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
-  coachBubble: { backgroundColor: '#F5F5F5', borderBottomLeftRadius: 4 },
-  msgText: { fontSize: 15, color: colors.text, lineHeight: 22 },
-  replayBtn: { padding: 6, marginLeft: 4 },
-  inputArea: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, borderTopWidth: 1, borderTopColor: '#F0F0F0', backgroundColor: '#FFF' },
-  micBtnContainer: { marginRight: 10 },
-  micBtn: { width: 52, height: 52, borderRadius: 26, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center' },
-  micBtnRecording: { backgroundColor: '#E53935' },
-  micBtnProcessing: { backgroundColor: '#FF9800' },
-  micBtnSpeaking: { backgroundColor: colors.primary },
-  textInput: { flex: 1, backgroundColor: '#F5F5F5', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, maxHeight: 80, color: colors.text },
-  sendBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
-  sendBtnDisabled: { opacity: 0.4 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#FFF' 
+  },
+  header: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between', 
+    paddingHorizontal: 16, 
+    paddingVertical: 12, 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#F0F0F0' 
+  },
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: colors.text 
+  },
+  stopBtn: {
+    padding: 4,
+  },
+  statusBar: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    paddingVertical: 12, 
+    gap: 10 
+  },
+  recordingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recordingDot: { 
+    width: 12, 
+    height: 12, 
+    borderRadius: 6, 
+    backgroundColor: '#FFF',
+  },
+  recordingText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  statusText: { 
+    color: '#FFF', 
+    fontSize: 14, 
+    fontWeight: '600' 
+  },
+  messages: { 
+    flex: 1 
+  },
+  messagesContent: { 
+    padding: 16, 
+    paddingBottom: 24 
+  },
+  welcome: { 
+    alignItems: 'center', 
+    paddingVertical: 40 
+  },
+  welcomeIcon: { 
+    width: 100, 
+    height: 100, 
+    borderRadius: 50, 
+    backgroundColor: '#F3E5F5', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginBottom: 24 
+  },
+  welcomeTitle: { 
+    fontSize: 24, 
+    fontWeight: '700', 
+    color: colors.text, 
+    marginBottom: 16 
+  },
+  welcomeText: { 
+    fontSize: 16, 
+    color: colors.textSecondary, 
+    textAlign: 'center', 
+    lineHeight: 28,
+    paddingHorizontal: 20,
+  },
+  instructionBold: {
+    fontWeight: '700',
+    color: colors.text,
+  },
+  warning: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#FFF3E0', 
+    paddingVertical: 12, 
+    paddingHorizontal: 20, 
+    borderRadius: 24, 
+    marginTop: 20 
+  },
+  warningText: { 
+    color: colors.warning, 
+    fontSize: 14, 
+    fontWeight: '600', 
+    marginLeft: 10 
+  },
+  userMsg: { 
+    flexDirection: 'row', 
+    justifyContent: 'flex-end', 
+    marginBottom: 16 
+  },
+  coachMsg: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start', 
+    marginBottom: 16 
+  },
+  avatar: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    backgroundColor: '#F3E5F5', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginRight: 10 
+  },
+  bubble: { 
+    maxWidth: '75%', 
+    padding: 14, 
+    borderRadius: 18 
+  },
+  userBubble: { 
+    backgroundColor: colors.primary, 
+    borderBottomRightRadius: 4 
+  },
+  coachBubble: { 
+    backgroundColor: '#F5F5F5', 
+    borderBottomLeftRadius: 4 
+  },
+  msgText: { 
+    fontSize: 15, 
+    color: colors.text, 
+    lineHeight: 22 
+  },
+  replayBtn: { 
+    padding: 8, 
+    marginLeft: 6,
+    backgroundColor: '#F3E5F5',
+    borderRadius: 20,
+  },
+  inputArea: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-end', 
+    padding: 12, 
+    paddingBottom: 16,
+    borderTopWidth: 1, 
+    borderTopColor: '#F0F0F0', 
+    backgroundColor: '#FFF' 
+  },
+  micBtnContainer: { 
+    marginRight: 10 
+  },
+  micBtn: { 
+    width: 54, 
+    height: 54, 
+    borderRadius: 27, 
+    backgroundColor: '#9C27B0', 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+  },
+  micBtnRecording: { 
+    backgroundColor: '#E53935' 
+  },
+  micBtnProcessing: { 
+    backgroundColor: '#FF9800' 
+  },
+  micBtnSpeaking: { 
+    backgroundColor: colors.primary 
+  },
+  textInput: { 
+    flex: 1, 
+    backgroundColor: '#F5F5F5', 
+    borderRadius: 24, 
+    paddingHorizontal: 18, 
+    paddingVertical: 12, 
+    fontSize: 15, 
+    maxHeight: 100, 
+    color: colors.text 
+  },
+  sendBtn: { 
+    width: 46, 
+    height: 46, 
+    borderRadius: 23, 
+    backgroundColor: colors.primary, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginLeft: 10 
+  },
+  sendBtnDisabled: { 
+    opacity: 0.4 
+  },
 });
