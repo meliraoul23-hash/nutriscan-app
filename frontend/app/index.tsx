@@ -1764,7 +1764,9 @@ export default function NutriScanApp() {
 
   // Handle Premium Subscription
   const handlePremiumSubscription = async () => {
-    if (!user) {
+    console.log('handlePremiumSubscription called, user:', user);
+    
+    if (!user || !user.email) {
       Alert.alert('Connexion requise', 'Veuillez vous connecter pour vous abonner.');
       setCurrentScreen('auth');
       return;
@@ -1773,35 +1775,41 @@ export default function NutriScanApp() {
     setLoading(true);
     try {
       // Get current URL for redirect
-      const baseUrl = typeof window !== 'undefined' 
-        ? window.location.origin 
-        : 'https://nutriscan-167.preview.emergentagent.com';
+      const baseUrl = 'https://nutriscan-167.preview.emergentagent.com';
       
-      const response = await axios.post(`${API_URL}/create-checkout-session`, {
+      console.log('Creating checkout session for user:', user.email, 'user_id:', user.user_id);
+      
+      const requestData = {
         plan: selectedPlan,
         success_url: `${baseUrl}/?payment=success`,
         cancel_url: `${baseUrl}/?payment=cancelled`,
         user_email: user.email,
-        user_id: user.user_id
-      });
+        user_id: user.user_id || user.email
+      };
+      console.log('Request data:', JSON.stringify(requestData));
+      
+      const response = await axios.post(`${API_URL}/create-checkout-session`, requestData);
       
       const { checkout_url } = response.data;
+      console.log('Checkout URL received:', checkout_url);
       
-      if (typeof window !== 'undefined') {
+      if (!checkout_url) {
+        throw new Error('URL de paiement non reçue');
+      }
+      
+      if (Platform.OS === 'web') {
         // On web, redirect to Stripe checkout
         window.location.href = checkout_url;
       } else {
-        // On mobile, open in browser
-        const result = await WebBrowser.openBrowserAsync(checkout_url);
-        if (result.type === 'cancel') {
-          // User closed the browser, check if payment was successful
-          // Refresh user data
-          loadAuthState();
-        }
+        // On mobile (iOS/Android), use Linking to open the URL
+        const { Linking } = await import('react-native');
+        console.log('Opening URL on mobile:', checkout_url);
+        await Linking.openURL(checkout_url);
       }
     } catch (error: any) {
-      console.log('Payment error:', error);
-      Alert.alert('Erreur', error.response?.data?.detail || 'Erreur lors du paiement');
+      console.log('Payment error details:', error.response?.data, error.message);
+      const errorMessage = error.response?.data?.detail || error.message || 'Une erreur est survenue';
+      Alert.alert('Erreur de paiement', errorMessage + '\n\nVeuillez réessayer.');
     } finally {
       setLoading(false);
     }

@@ -960,9 +960,11 @@ class CreateCheckoutRequest(BaseModel):
 async def create_checkout_session(request: CreateCheckoutRequest, user: User = Depends(get_current_user)):
     """Create a Stripe checkout session for Premium subscription"""
     
-    # Use user from token if available, otherwise use request data
-    user_email = user.email if user else request.user_email
-    user_id = user.user_id if user else request.user_id
+    # Use request data as primary source (for Firebase users), fallback to JWT user
+    user_email = request.user_email or (user.email if user else None)
+    user_id = request.user_id or (user.user_id if user else None)
+    
+    logger.info(f"Checkout request - email: {user_email}, user_id: {user_id}")
     
     if not user_email:
         raise HTTPException(status_code=401, detail="Email requis pour le paiement")
