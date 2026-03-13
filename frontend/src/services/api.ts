@@ -169,4 +169,13 @@ export const createCheckoutSessionAPI = async (
   return response.data;
 };
 
+// Fridge Score (Viral Feature)
+export const fetchFridgeScoreAPI = async (email?: string, userId?: string): Promise<any> => {
+  const params = new URLSearchParams();
+  if (email) params.append('email', email);
+  if (userId) params.append('user_id', userId);
+  const response = await api.get(`/fridge-score?${params.toString()}`);
+  return response.data;
+};
+
 export default api;

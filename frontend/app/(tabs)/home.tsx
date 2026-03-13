@@ -69,6 +69,22 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Fridge Score Button - VIRAL FEATURE */}
+        <TouchableOpacity 
+          style={styles.fridgeScoreButton} 
+          onPress={() => router.push('/fridge-score')} 
+          activeOpacity={0.8}
+        >
+          <View style={styles.fridgeScoreInner}>
+            <Text style={styles.fridgeEmoji}>🧊</Text>
+            <View style={styles.fridgeTextContainer}>
+              <Text style={styles.fridgeTitle}>Score de mon Frigo</Text>
+              <Text style={styles.fridgeSubtitle}>Découvre ton score et partage-le !</Text>
+            </View>
+            <Ionicons name="share-social" size={22} color="#FFF" />
+          </View>
+        </TouchableOpacity>
+
         {/* Recent Scans */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Scans récents</Text>
@@ -207,9 +223,15 @@ const styles = StyleSheet.create({
   scanButton: { marginBottom: 12 },
   scanButtonInner: { backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16 },
   scanButtonText: { color: '#FFF', fontSize: 18, fontWeight: '600', marginLeft: 12 },
-  compareButton: { marginBottom: 24 },
+  compareButton: { marginBottom: 12 },
   compareButtonInner: { backgroundColor: colors.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.primary },
   compareButtonText: { color: colors.primary, fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  fridgeScoreButton: { marginBottom: 24 },
+  fridgeScoreInner: { backgroundColor: '#667eea', flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16, borderRadius: 16 },
+  fridgeEmoji: { fontSize: 32 },
+  fridgeTextContainer: { flex: 1, marginLeft: 12 },
+  fridgeTitle: { fontSize: 16, fontWeight: '700', color: '#FFF' },
+  fridgeSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
   sectionContainer: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 8 },
   sectionSubtitle: { fontSize: 12, color: colors.textSecondary, marginBottom: 12, marginTop: -4 },

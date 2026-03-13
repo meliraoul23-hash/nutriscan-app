@@ -681,6 +681,125 @@ async def clear_history(user: User = Depends(get_current_user)):
     await db.scan_history.delete_many(query)
     return {"message": "Historique effacé"}
 
+
+# ============== FRIDGE SCORE (VIRAL FEATURE) ==============
+class FridgeScoreResponse(BaseModel):
+    score: int
+    grade: str  # A, B, C, D, E
+    total_products: int
+    healthy_products: int
+    unhealthy_products: int
+    average_nutri_score: str
+    top_healthy: List[Dict[str, Any]]
+    needs_improvement: List[Dict[str, Any]]
+    tips: List[str]
+    share_text: str
+
+@api_router.get("/fridge-score", response_model=FridgeScoreResponse)
+async def get_fridge_score(request: Request):
+    """Calculate the overall health score of user's fridge based on scan history - VIRAL FEATURE"""
+    user = await get_firebase_premium_user(request)
+    
+    # Get user's scan history
+    query = {}
+    if user:
+        query["user_id"] = user.email
+    
+    scans = await db.scan_history.find(query).sort('timestamp', -1).limit(50).to_list(50)
+    
+    # Also try without user filter if empty
+    if not scans:
+        scans = await db.scan_history.find().sort('timestamp', -1).limit(20).to_list(20)
+    
+    if not scans:
+        return FridgeScoreResponse(
+            score=0,
+            grade="?",
+            total_products=0,
+            healthy_products=0,
+            unhealthy_products=0,
+            average_nutri_score="?",
+            top_healthy=[],
+            needs_improvement=[],
+            tips=["Scannez des produits pour connaître le score de votre frigo !"],
+            share_text="Découvre NutriScan et analyse ton frigo ! 🥗"
+        )
+    
+    # Remove duplicates by barcode
+    seen = set()
+    unique_scans = []
+    for scan in scans:
+        if scan['barcode'] not in seen:
+            seen.add(scan['barcode'])
+            unique_scans.append(scan)
+    
+    # Calculate metrics
+    total = len(unique_scans)
+    scores = [s.get('health_score', 50) for s in unique_scans]
+    avg_score = sum(scores) / total if total > 0 else 50
+    
+    # Count healthy vs unhealthy
+    healthy = sum(1 for s in scores if s >= 60)
+    unhealthy = sum(1 for s in scores if s < 40)
+    
+    # Calculate grade
+    if avg_score >= 80:
+        grade = "A"
+    elif avg_score >= 65:
+        grade = "B"
+    elif avg_score >= 50:
+        grade = "C"
+    elif avg_score >= 35:
+        grade = "D"
+    else:
+        grade = "E"
+    
+    # Get nutri-score distribution
+    nutri_scores = [s.get('nutri_score', 'C') for s in unique_scans if s.get('nutri_score')]
+    if nutri_scores:
+        # Most common nutri-score
+        from collections import Counter
+        avg_nutri = Counter(nutri_scores).most_common(1)[0][0]
+    else:
+        avg_nutri = "C"
+    
+    # Top healthy products
+    top_healthy = sorted(unique_scans, key=lambda x: x.get('health_score', 0), reverse=True)[:3]
+    top_healthy = [{"name": p.get('product_name', ''), "score": p.get('health_score', 0)} for p in top_healthy]
+    
+    # Products needing improvement
+    needs_improvement = sorted(unique_scans, key=lambda x: x.get('health_score', 100))[:3]
+    needs_improvement = [{"name": p.get('product_name', ''), "score": p.get('health_score', 0)} for p in needs_improvement if p.get('health_score', 100) < 50]
+    
+    # Generate tips
+    tips = []
+    if avg_score < 50:
+        tips.append("🥗 Ajoutez plus de fruits et légumes frais")
+    if unhealthy > healthy:
+        tips.append("🔄 Remplacez les produits ultra-transformés par des alternatives saines")
+    if avg_score >= 70:
+        tips.append("🌟 Excellent ! Continuez comme ça !")
+    if len(tips) == 0:
+        tips.append("💡 Scannez plus de produits pour des conseils personnalisés")
+    
+    # Generate viral share text
+    emoji = "🏆" if grade == "A" else "✨" if grade == "B" else "💪" if grade == "C" else "📈" if grade == "D" else "🎯"
+    share_text = f"{emoji} Mon frigo a un score de {int(avg_score)}/100 ! Note: {grade}\n\n🥗 {healthy} produits sains sur {total}\n\nEt toi, quel est le score de ton frigo ? 🤔\n\n#NutriScan #ScoreFrigo #MangerMieux"
+    
+    return FridgeScoreResponse(
+        score=int(avg_score),
+        grade=grade,
+        total_products=total,
+        healthy_products=healthy,
+        unhealthy_products=unhealthy,
+        average_nutri_score=avg_nutri,
+        top_healthy=top_healthy,
+        needs_improvement=needs_improvement,
+        tips=tips,
+        share_text=share_text
+    )
+
+
 # ============== SEARCH ROUTES ==============
 @api_router.get("/search")
 async def search_products(q: str, page: int = 1, page_size: int = 15):
