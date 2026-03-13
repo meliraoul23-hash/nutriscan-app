@@ -236,6 +236,9 @@ export default function NutriScanApp() {
   const [coachInput, setCoachInput] = useState('');
   const [coachLoading, setCoachLoading] = useState(false);
   
+  // Shopping list state
+  const [shoppingList, setShoppingList] = useState<string[]>([]);
+  
   // Offline cache
   const [cachedProducts, setCachedProducts] = useState<{[key: string]: Product}>({});
   
@@ -797,13 +800,30 @@ export default function NutriScanApp() {
   // Remove from Favorites
   const removeFromFavorites = async (barcode: string) => {
     if (!user) return;
-    try {
-      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
-      await axios.delete(`${API_URL}/favorites/${barcode}?${params.toString()}`);
-      fetchFavorites();
-    } catch (error) {
-      console.log('Error removing favorite:', error);
-    }
+    
+    Alert.alert(
+      'Supprimer le favori ?',
+      'Voulez-vous vraiment retirer ce produit de vos favoris ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { 
+          text: 'Supprimer', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+              await axios.delete(`${API_URL}/favorites/${barcode}?${params.toString()}`);
+              // Update local state immediately
+              setFavorites(prev => prev.filter(f => f.barcode !== barcode));
+              Alert.alert('Supprimé', 'Produit retiré des favoris');
+            } catch (error) {
+              console.log('Error removing favorite:', error);
+              Alert.alert('Erreur', 'Impossible de supprimer le favori');
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Check if product is favorite
@@ -895,6 +915,12 @@ export default function NutriScanApp() {
       });
       const response = await axios.post(`${API_URL}/generate-menu?${params.toString()}`, {});
       setWeeklyMenu(response.data);
+      // Save shopping list separately
+      if (response.data.liste_courses) {
+        setShoppingList(response.data.liste_courses);
+        // Also save to AsyncStorage for persistence
+        await AsyncStorage.setItem('shopping_list', JSON.stringify(response.data.liste_courses));
+      }
       setCurrentScreen('menu');
     } catch (error: any) {
       console.log('Menu generation error:', error.response?.data);
@@ -1131,6 +1157,45 @@ export default function NutriScanApp() {
     } catch (error) {
       console.log('Share menu error:', error);
       Alert.alert('Erreur', 'Impossible de partager le menu');
+    }
+  };
+
+  // Download Shopping List
+  const downloadShoppingList = async () => {
+    if (shoppingList.length === 0) {
+      Alert.alert('Aucune liste', 'Générez d\'abord un menu pour avoir une liste de courses');
+      return;
+    }
+    
+    let listText = '🛒 LISTE DE COURSES NUTRISCAN\n';
+    listText += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    shoppingList.forEach((item, index) => {
+      listText += `☐ ${item}\n`;
+    });
+    listText += '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+    listText += '📱 Généré par NutriScan Premium';
+    
+    try {
+      if (Platform.OS === 'web') {
+        const blob = new Blob([listText], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `liste-courses-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        Alert.alert('Téléchargé !', 'La liste de courses a été téléchargée');
+      } else {
+        await Share.share({
+          message: listText,
+          title: 'Liste de courses NutriScan',
+        });
+      }
+    } catch (error) {
+      console.log('Download shopping list error:', error);
+      Alert.alert('Erreur', 'Impossible de télécharger la liste');
     }
   };
 
@@ -1565,44 +1630,55 @@ export default function NutriScanApp() {
   );
 
   // Rankings Tab
-  const renderRankingsTab = () => (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
-      <Text style={styles.pageTitle}>Classement Santé</Text>
-      <Text style={styles.pageSubtitle}>Les meilleurs produits pour votre santé</Text>
+  const renderRankingsTab = () => {
+    // Filter only products with score 100
+    const topProducts = rankings.filter(item => item.health_score === 100);
+    
+    return (
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+        <Text style={styles.pageTitle}>Classement Santé</Text>
+        <Text style={styles.pageSubtitle}>Les meilleurs produits (Score 100/100)</Text>
 
-      {rankings.length === 0 ? (
-        <View style={styles.emptyStateLarge}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.emptyStateSubtext}>Chargement...</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={fetchRankings}>
-            <Text style={styles.retryButtonText}>Réessayer</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        rankings.map((item, index) => (
-          <TouchableOpacity key={index} style={styles.rankingItem} onPress={() => fetchProduct(item.barcode)}>
-            <View style={styles.rankingPosition}>
-              <Text style={styles.rankingPositionText}>{index + 1}</Text>
-            </View>
-            <View style={styles.rankingImageContainer}>
-              {item.image_url ? (
-                <Image source={{ uri: item.image_url }} style={styles.rankingImage} />
-              ) : (
-                <Ionicons name="trophy" size={24} color={colors.primary} />
-              )}
-            </View>
-            <View style={styles.rankingInfo}>
-              <Text style={styles.rankingName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.rankingBrand} numberOfLines={1}>{item.brand || 'Marque inconnue'}</Text>
-            </View>
-            <View style={[styles.rankingScore, { backgroundColor: getScoreColor(item.health_score) }]}>
-              <Text style={styles.rankingScoreText}>{item.health_score}</Text>
-            </View>
-          </TouchableOpacity>
-        ))
-      )}
-    </ScrollView>
-  );
+        {rankings.length === 0 ? (
+          <View style={styles.emptyStateLarge}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.emptyStateSubtext}>Chargement...</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchRankings}>
+              <Text style={styles.retryButtonText}>Réessayer</Text>
+            </TouchableOpacity>
+          </View>
+        ) : topProducts.length === 0 ? (
+          <View style={styles.emptyStateLarge}>
+            <Ionicons name="trophy-outline" size={64} color={colors.textSecondary} />
+            <Text style={styles.emptyStateTitle}>Aucun produit parfait trouvé</Text>
+            <Text style={styles.emptyStateSubtext}>Aucun produit avec un score de 100 pour le moment</Text>
+          </View>
+        ) : (
+          topProducts.map((item, index) => (
+            <TouchableOpacity key={index} style={styles.rankingItem} onPress={() => fetchProduct(item.barcode)}>
+              <View style={styles.rankingPosition}>
+                <Text style={styles.rankingPositionText}>{index + 1}</Text>
+              </View>
+              <View style={styles.rankingImageContainer}>
+                {item.image_url ? (
+                  <Image source={{ uri: item.image_url }} style={styles.rankingImage} />
+                ) : (
+                  <Ionicons name="trophy" size={24} color={colors.primary} />
+                )}
+              </View>
+              <View style={styles.rankingInfo}>
+                <Text style={styles.rankingName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.rankingBrand} numberOfLines={1}>{item.brand || 'Marque inconnue'}</Text>
+              </View>
+              <View style={[styles.rankingScore, { backgroundColor: colors.success }]}>
+                <Text style={styles.rankingScoreText}>100</Text>
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+    );
+  };
 
   // Profile Tab
   const renderProfileTab = () => (
@@ -1693,6 +1769,23 @@ export default function NutriScanApp() {
                     </>
                   )}
                 </TouchableOpacity>
+                
+                {/* View Menu Button */}
+                {weeklyMenu && (
+                  <TouchableOpacity style={styles.viewMenuButton} onPress={() => setCurrentScreen('menu')}>
+                    <Ionicons name="calendar" size={20} color={colors.primary} />
+                    <Text style={styles.viewMenuButtonText}>Voir mon menu</Text>
+                  </TouchableOpacity>
+                )}
+                
+                {/* Shopping List Button */}
+                {shoppingList.length > 0 && (
+                  <TouchableOpacity style={styles.shoppingListButton} onPress={downloadShoppingList}>
+                    <Ionicons name="cart" size={20} color="#FFF" />
+                    <Text style={styles.shoppingListButtonText}>Ma liste de courses ({shoppingList.length})</Text>
+                    <Ionicons name="download-outline" size={18} color="#FFF" />
+                  </TouchableOpacity>
+                )}
                 
                 {/* Coach IA Button */}
                 <TouchableOpacity style={styles.coachButton} onPress={() => setCurrentScreen('coach')}>
@@ -3246,6 +3339,10 @@ const styles = StyleSheet.create({
   // Menu Button
   menuButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 12, marginTop: 12 },
   menuButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  viewMenuButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent', borderWidth: 2, borderColor: colors.primary, paddingVertical: 12, borderRadius: 12, marginTop: 10 },
+  viewMenuButtonText: { color: colors.primary, fontSize: 14, fontWeight: '600', marginLeft: 8 },
+  shoppingListButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.success, paddingVertical: 14, borderRadius: 12, marginTop: 10 },
+  shoppingListButtonText: { color: '#FFF', fontSize: 14, fontWeight: '600', marginLeft: 8, flex: 1 },
   coachButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#9C27B0', paddingVertical: 14, borderRadius: 12, marginTop: 12 },
   coachButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
   premiumFeatureLocked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: colors.surface, borderRadius: 12 },
