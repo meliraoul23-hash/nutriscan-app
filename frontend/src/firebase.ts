@@ -11,9 +11,10 @@ import {
   signInWithCredential,
   updateProfile,
   sendPasswordResetEmail,
-  User
+  User,
+  initializeAuth,
+  browserLocalPersistence
 } from 'firebase/auth';
-import { Platform } from 'react-native';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -28,7 +29,23 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+
+// Initialize Auth with persistence
+let auth: any;
+try {
+  // Check if we're in a browser environment
+  if (typeof window !== 'undefined') {
+    auth = initializeAuth(app, {
+      persistence: browserLocalPersistence
+    });
+  } else {
+    auth = getAuth(app);
+  }
+} catch (e) {
+  // If already initialized, get the existing instance
+  auth = getAuth(app);
+}
+
 const googleProvider = new GoogleAuthProvider();
 
 // Auth functions
@@ -81,8 +98,10 @@ export const firebaseLogout = async () => {
 
 export const firebaseGoogleLogin = async () => {
   try {
-    // On web, use popup
-    if (Platform.OS === 'web') {
+    // Check if we're on web (browser environment)
+    const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+    
+    if (isWeb) {
       googleProvider.setCustomParameters({
         prompt: 'select_account'
       });
@@ -102,7 +121,7 @@ export const firebaseGoogleLogin = async () => {
     } else if (error.code === 'auth/cancelled-popup-request') {
       message = 'Connexion annulée';
     } else if (error.code === 'auth/unauthorized-domain') {
-      message = 'Ce domaine n\'est pas autorisé. Contactez le support.';
+      message = 'Domaine non autorisé. Ajoutez ce domaine dans Firebase Console > Authentication > Settings > Authorized domains';
     }
     return { user: null, error: message };
   }
