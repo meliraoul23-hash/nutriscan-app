@@ -31,8 +31,13 @@ export const searchProductsAPI = async (query: string, page: number = 1): Promis
 };
 
 export const findBetterAlternativesAPI = async (barcode: string): Promise<any[]> => {
-  const response = await api.get(`/find-better/${barcode}`);
-  return response.data?.alternatives || [];
+  try {
+    const response = await api.get(`/alternatives/${barcode}`, { timeout: 15000 });
+    return response.data || [];
+  } catch (error) {
+    console.log('Error fetching alternatives:', error);
+    return [];
+  }
 };
 
 // History APIs
@@ -122,7 +127,7 @@ export const fetchExercisesAPI = async (email: string, userId: string): Promise<
 // Menu Generation (Premium)
 export const generateMenuAPI = async (email: string, userId: string, familySize: number): Promise<WeeklyMenu> => {
   const params = new URLSearchParams({ email, user_id: userId });
-  const response = await api.post(`/generate-menu?${params.toString()}`, { family_size: familySize });
+  const response = await api.post(`/generate-menu?${params.toString()}`, { family_size: familySize }, { timeout: 60000 });
   return response.data;
 };
 

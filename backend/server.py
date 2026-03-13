@@ -916,22 +916,27 @@ async def generate_weekly_menu(request: Request):
     
     try:
         menu_system = f"""Tu es un nutritionniste expert. Génère un menu hebdomadaire sain et équilibré pour {family_size} personne(s).
-        Le menu doit être adapté aux habitudes alimentaires de l'utilisateur tout en proposant des alternatives plus saines.
         
-        IMPORTANT - LISTE DE COURSES POUR UNE SEMAINE COMPLÈTE:
-        - Les quantités doivent couvrir TOUS les repas de la semaine (7 jours)
-        - Adapte les quantités pour {family_size} personne(s)
-        - Inclus les unités précises: grammes (g), kilogrammes (kg), litres (L), pièces, etc.
-        - Regroupe les ingrédients similaires (ex: total des légumes, total des fruits)
+        RÈGLES STRICTES POUR LA LISTE DE COURSES:
+        1. La liste de courses doit contenir UNIQUEMENT des INGRÉDIENTS BRUTS à acheter
+        2. NE PAS mettre de descriptions de repas ou recettes dans la liste
+        3. Format simple: "quantité + ingrédient" (ex: "1kg poulet", "6 oeufs", "500g riz")
+        4. Regrouper les ingrédients similaires
+        5. Adapter les quantités pour {family_size} personne(s) sur 7 jours
         
-        Exemple de format pour la liste:
-        - "1.5kg de poulet" (pour les repas de la semaine)
-        - "2kg de riz ou pâtes"
-        - "18 oeufs" (pour {family_size} pers. x 7 jours)
-        - "3L de lait"
-        - "1kg de légumes variés (tomates, courgettes, carottes)"
+        EXEMPLES CORRECTS pour liste_courses:
+        ✅ "1.5kg de poulet"
+        ✅ "500g de riz basmati"  
+        ✅ "12 oeufs"
+        ✅ "2L de lait"
+        ✅ "1kg de tomates"
         
-        Réponds UNIQUEMENT en JSON valide avec cette structure exacte:
+        EXEMPLES INCORRECTS (NE PAS FAIRE):
+        ❌ "Poulet grillé aux herbes avec légumes"
+        ❌ "Omelette aux champignons"
+        ❌ "Salade de quinoa"
+        
+        Réponds UNIQUEMENT en JSON valide:
         {{
             "samedi": {{"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."}},
             "dimanche": {{"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."}},
@@ -940,7 +945,7 @@ async def generate_weekly_menu(request: Request):
             "mercredi": {{"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."}},
             "jeudi": {{"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."}},
             "vendredi": {{"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."}},
-            "liste_courses": ["1.5kg de poulet", "2kg de riz", "18 oeufs", ...],
+            "liste_courses": ["1.5kg poulet", "500g riz", "12 oeufs", "2L lait", "1kg tomates", "500g carottes", ...],
             "nombre_personnes": {family_size}
         }}"""
         
