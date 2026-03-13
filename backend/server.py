@@ -14,6 +14,7 @@ import httpx
 import bcrypt
 import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+import stripe
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -30,6 +31,10 @@ JWT_EXPIRATION_DAYS = 7
 
 # Emergent LLM Key
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+# Stripe Configuration
+stripe.api_key = os.environ.get('STRIPE_SECRET_KEY', '')
+STRIPE_PUBLIC_KEY = os.environ.get('STRIPE_PUBLIC_KEY', '')
 
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
@@ -905,6 +910,127 @@ async def get_subscription_status(user: User = Depends(get_current_user)):
         features.extend(["weekly_menu", "advanced_recommendations", "healing_foods_details", "priority_support"])
     
     return {"subscription_type": user.subscription_type, "features": features}
+
+# ============== STRIPE PAYMENT ==============
+class CreateCheckoutRequest(BaseModel):
+    plan: str  # 'monthly' or 'yearly'
+    success_url: str
+    cancel_url: str
+
+@api_router.post("/create-checkout-session")
+async def create_checkout_session(request: CreateCheckoutRequest, user: User = Depends(get_current_user)):
+    """Create a Stripe checkout session for Premium subscription"""
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    # Define prices
+    prices = {
+        'monthly': {
+            'amount': 1999,  # 19.99 EUR in cents
+            'interval': 'month',
+            'name': 'NutriScan Premium - Mensuel'
+        },
+        'yearly': {
+            'amount': 14999,  # 149.99 EUR in cents
+            'interval': 'year',
+            'name': 'NutriScan Premium - Annuel'
+        }
+    }
+    
+    if request.plan not in prices:
+        raise HTTPException(status_code=400, detail="Plan invalide")
+    
+    plan_info = prices[request.plan]
+    
+    try:
+        # Create Stripe checkout session
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'eur',
+                    'product_data': {
+                        'name': plan_info['name'],
+                        'description': 'Accès Premium à NutriScan avec menus IA, objectifs santé, et plus',
+                    },
+                    'unit_amount': plan_info['amount'],
+                    'recurring': {
+                        'interval': plan_info['interval'],
+                    },
+                },
+                'quantity': 1,
+            }],
+            mode='subscription',
+            success_url=request.success_url + '?session_id={CHECKOUT_SESSION_ID}',
+            cancel_url=request.cancel_url,
+            client_reference_id=user.user_id,
+            customer_email=user.email,
+            metadata={
+                'user_id': user.user_id,
+                'plan': request.plan
+            }
+        )
+        
+        return {
+            'checkout_url': checkout_session.url,
+            'session_id': checkout_session.id
+        }
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erreur de paiement: {str(e)}")
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhooks for subscription events"""
+    payload = await request.body()
+    sig_header = request.headers.get('stripe-signature')
+    
+    # For now, we'll process without signature verification
+    # In production, you should verify the webhook signature
+    try:
+        event = stripe.Event.construct_from(
+            stripe.util.convert_to_stripe_object(payload),
+            stripe.api_key
+        )
+    except Exception as e:
+        logger.error(f"Webhook error: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid payload")
+    
+    # Handle the event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        user_id = session.get('client_reference_id') or session.get('metadata', {}).get('user_id')
+        
+        if user_id:
+            # Update user to premium
+            await db.users.update_one(
+                {"user_id": user_id},
+                {"$set": {
+                    "subscription_type": "premium",
+                    "stripe_customer_id": session.get('customer'),
+                    "stripe_subscription_id": session.get('subscription'),
+                    "premium_since": datetime.now(timezone.utc)
+                }}
+            )
+            logger.info(f"User {user_id} upgraded to premium")
+    
+    elif event['type'] == 'customer.subscription.deleted':
+        subscription = event['data']['object']
+        customer_id = subscription.get('customer')
+        
+        # Downgrade user
+        await db.users.update_one(
+            {"stripe_customer_id": customer_id},
+            {"$set": {"subscription_type": "free"}}
+        )
+        logger.info(f"Subscription cancelled for customer {customer_id}")
+    
+    return {"status": "success"}
+
+@api_router.get("/stripe-public-key")
+async def get_stripe_public_key():
+    """Get Stripe public key for frontend"""
+    return {"public_key": STRIPE_PUBLIC_KEY}
 
 # ============== HEALTH GOALS ==============
 class HealthGoal(BaseModel):

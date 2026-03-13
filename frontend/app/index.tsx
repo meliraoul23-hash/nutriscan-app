@@ -1711,15 +1711,39 @@ export default function NutriScanApp() {
       return;
     }
     
-    // For now, show a message - Stripe integration will be added
-    Alert.alert(
-      'Paiement Premium',
-      `Vous avez choisi le forfait ${selectedPlan === 'yearly' ? 'Annuel (149,99 €/an)' : 'Mensuel (19,99 €/mois)'}.\n\nLe système de paiement sera bientôt disponible !`,
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'OK', onPress: () => upgradeToPremium() }
-      ]
-    );
+    setLoading(true);
+    try {
+      // Get current URL for redirect
+      const baseUrl = Platform.OS === 'web' 
+        ? window.location.origin 
+        : 'https://nutriscan-167.preview.emergentagent.com';
+      
+      const response = await axios.post(`${API_URL}/create-checkout-session`, {
+        plan: selectedPlan,
+        success_url: `${baseUrl}/?payment=success`,
+        cancel_url: `${baseUrl}/?payment=cancelled`
+      });
+      
+      const { checkout_url } = response.data;
+      
+      if (Platform.OS === 'web') {
+        // On web, redirect to Stripe checkout
+        window.location.href = checkout_url;
+      } else {
+        // On mobile, open in browser
+        const result = await WebBrowser.openBrowserAsync(checkout_url);
+        if (result.type === 'cancel') {
+          // User closed the browser, check if payment was successful
+          // Refresh user data
+          loadAuthState();
+        }
+      }
+    } catch (error: any) {
+      console.log('Payment error:', error);
+      Alert.alert('Erreur', error.response?.data?.detail || 'Erreur lors du paiement');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Goal Selection Modal
