@@ -1866,6 +1866,24 @@ export default function NutriScanApp() {
             </View>
           )}
 
+          {/* Coach IA Button - Always visible */}
+          <View style={styles.profileSection}>
+            <View style={styles.profileSectionHeader}>
+              <Text style={styles.profileSectionTitle}>Assistant IA</Text>
+              <Ionicons name="sparkles" size={16} color={colors.premium} />
+            </View>
+            <TouchableOpacity style={styles.coachButtonLarge} onPress={() => setCurrentScreen('coach')}>
+              <View style={styles.coachIconContainer}>
+                <Ionicons name="chatbubble-ellipses" size={28} color="#FFF" />
+              </View>
+              <View style={styles.coachButtonInfo}>
+                <Text style={styles.coachButtonTitle}>Parler au Coach IA</Text>
+                <Text style={styles.coachButtonSubtitle}>Conseils nutrition personnalisés</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity style={styles.logoutButton} onPress={logout}>
             <Ionicons name="log-out-outline" size={20} color={colors.error} />
             <Text style={styles.logoutButtonText}>Se déconnecter</Text>
@@ -3392,6 +3410,11 @@ const styles = StyleSheet.create({
   shoppingListButtonText: { color: '#FFF', fontSize: 14, fontWeight: '600', marginLeft: 8, flex: 1 },
   coachButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#9C27B0', paddingVertical: 14, borderRadius: 12, marginTop: 12 },
   coachButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  coachButtonLarge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 16, borderRadius: 16, marginTop: 8 },
+  coachIconContainer: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center' },
+  coachButtonInfo: { flex: 1, marginLeft: 16 },
+  coachButtonTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+  coachButtonSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
   premiumFeatureLocked: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: colors.surface, borderRadius: 12 },
   premiumFeatureText: { fontSize: 14, color: colors.textSecondary, marginLeft: 8 },
 
