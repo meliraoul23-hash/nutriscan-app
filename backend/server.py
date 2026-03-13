@@ -1888,45 +1888,48 @@ from fastapi import UploadFile, File
 
 @api_router.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
-    """Transcribe audio to text using OpenAI Whisper via LLM"""
+    """Transcribe audio to text using OpenAI Whisper"""
     try:
         import tempfile
         import os
         
         # Save uploaded file temporarily
+        content = await audio.read()
+        
         with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as temp_file:
-            content = await audio.read()
             temp_file.write(content)
             temp_path = temp_file.name
         
+        logger.info(f"Received audio file: {len(content)} bytes")
+        
         try:
             # Use OpenAI Whisper API for transcription
-            import httpx
-            
-            headers = {
-                "Authorization": f"Bearer {EMERGENT_LLM_KEY}"
-            }
-            
-            with open(temp_path, "rb") as audio_file:
-                files = {
-                    "file": (audio.filename or "audio.m4a", audio_file, "audio/m4a"),
-                    "model": (None, "whisper-1"),
-                    "language": (None, "fr"),
-                }
-                
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    response = await client.post(
+            async with httpx.AsyncClient(timeout=60.0) as http_client:
+                with open(temp_path, "rb") as audio_file:
+                    response = await http_client.post(
                         "https://api.openai.com/v1/audio/transcriptions",
-                        headers=headers,
-                        files=files
+                        headers={
+                            "Authorization": f"Bearer {EMERGENT_LLM_KEY}"
+                        },
+                        files={
+                            "file": ("audio.m4a", audio_file, "audio/m4a"),
+                        },
+                        data={
+                            "model": "whisper-1",
+                            "language": "fr",
+                        }
                     )
+                    
+                    logger.info(f"Whisper response status: {response.status_code}")
                     
                     if response.status_code == 200:
                         result = response.json()
-                        return {"text": result.get("text", ""), "success": True}
+                        transcribed_text = result.get("text", "")
+                        logger.info(f"Transcribed text: {transcribed_text[:100]}...")
+                        return {"text": transcribed_text, "success": True}
                     else:
-                        logger.error(f"Transcription error: {response.text}")
-                        return {"text": "", "success": False, "error": "Transcription failed"}
+                        logger.error(f"Whisper error: {response.text}")
+                        return {"text": "", "success": False, "error": f"Whisper API error: {response.status_code}"}
         finally:
             # Clean up temp file
             if os.path.exists(temp_path):

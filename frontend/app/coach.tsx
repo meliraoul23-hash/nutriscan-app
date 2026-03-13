@@ -16,7 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
-import { Audio } from 'expo-av';
+import { useAudioRecorder, RecordingPresets, AudioModule } from 'expo-audio';
+import Constants from 'expo-constants';
 import { useAuth } from '../src/contexts/AuthContext';
 import { useApp } from '../src/contexts/AppContext';
 import { sendCoachMessageAPI } from '../src/services/api';
@@ -39,45 +40,45 @@ export default function CoachScreen() {
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  
-  // Voice recording states
-  const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState(false);
+  
+  // Audio recorder hook
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
 
-  // Setup audio on mount
+  // Request permissions on mount
   useEffect(() => {
-    return () => {
-      // Cleanup
-      if (recording) {
-        recording.stopAndUnloadAsync();
+    const requestPermissions = async () => {
+      try {
+        const status = await AudioModule.requestRecordingPermissionsAsync();
+        setPermissionGranted(status.granted);
+        if (!status.granted) {
+          console.log('Microphone permission not granted');
+        }
+      } catch (error) {
+        console.log('Error requesting permissions:', error);
       }
+    };
+    requestPermissions();
+
+    return () => {
       Speech.stop();
     };
   }, []);
 
   const startRecording = async () => {
-    try {
-      // Request permissions
-      const permission = await Audio.requestPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert('Permission requise', 'Autorisez l\'accès au microphone pour utiliser la fonction vocale.');
-        return;
-      }
-
-      // Configure audio mode
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-
-      // Start recording
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+    if (!permissionGranted) {
+      Alert.alert(
+        'Permission requise',
+        'Autorisez l\'accès au microphone pour utiliser la fonction vocale.',
+        [{ text: 'OK' }]
       );
-      
-      setRecording(newRecording);
-      setIsRecording(true);
+      return;
+    }
+
+    try {
+      console.log('Starting recording...');
+      audioRecorder.record();
     } catch (error) {
       console.log('Error starting recording:', error);
       Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement');
@@ -85,42 +86,42 @@ export default function CoachScreen() {
   };
 
   const stopRecording = async () => {
-    if (!recording) return;
+    if (!audioRecorder.isRecording) return;
 
-    setIsRecording(false);
     setIsTranscribing(true);
+    console.log('Stopping recording...');
 
     try {
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-      setRecording(null);
+      await audioRecorder.stop();
+      const uri = audioRecorder.uri;
+      console.log('Recording URI:', uri);
 
       if (uri) {
-        // Send to backend for transcription
-        await transcribeAudio(uri);
+        await transcribeAndSend(uri);
       }
     } catch (error) {
       console.log('Error stopping recording:', error);
-    } finally {
       setIsTranscribing(false);
     }
   };
 
-  const transcribeAudio = async (uri: string) => {
+  const transcribeAndSend = async (uri: string) => {
     try {
-      // For now, we'll use a simple approach - send message asking user to type
-      // In production, you'd send the audio file to a transcription API
+      const backendUrl = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL 
+        || process.env.EXPO_PUBLIC_BACKEND_URL 
+        || '';
       
-      // Create form data with audio file
+      // Create form data
       const formData = new FormData();
       formData.append('audio', {
-        uri,
+        uri: uri,
         type: 'audio/m4a',
         name: 'recording.m4a',
       } as any);
 
-      // Try to transcribe via backend
-      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL || ''}/api/transcribe`, {
+      console.log('Sending audio for transcription...');
+      
+      const response = await fetch(`${backendUrl}/api/transcribe`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -128,31 +129,35 @@ export default function CoachScreen() {
         },
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.text) {
-          setInputText(data.text);
-          // Auto-send the transcribed message
-          sendMessage(data.text);
-        }
+      const data = await response.json();
+      console.log('Transcription result:', data);
+
+      if (data.success && data.text) {
+        // Send the transcribed message
+        await sendMessage(data.text);
       } else {
-        // Fallback: just show a message
-        Alert.alert('Transcription', 'Tapez votre message manuellement pour l\'instant.');
+        Alert.alert('Transcription', 'Impossible de transcrire l\'audio. Réessayez ou tapez votre message.');
       }
     } catch (error) {
       console.log('Transcription error:', error);
-      Alert.alert('Erreur', 'Impossible de transcrire l\'audio. Tapez votre message.');
+      Alert.alert('Erreur', 'Erreur de transcription. Réessayez.');
+    } finally {
+      setIsTranscribing(false);
     }
   };
 
   const speakResponse = (text: string) => {
+    // Stop any current speech
+    Speech.stop();
+    
     setIsSpeaking(true);
     Speech.speak(text, {
       language: 'fr-FR',
       pitch: 1.0,
-      rate: 0.9,
+      rate: 0.95,
       onDone: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
+      onStopped: () => setIsSpeaking(false),
     });
   };
 
@@ -203,7 +208,7 @@ export default function CoachScreen() {
           <View style={styles.coachAvatar}>
             <Ionicons name="chatbubbles" size={20} color="#9C27B0" />
           </View>
-          <Text style={styles.title}>Coach IA</Text>
+          <Text style={styles.title}>Coach IA Vocal</Text>
         </View>
         {isSpeaking ? (
           <TouchableOpacity style={styles.speakButton} onPress={stopSpeaking}>
@@ -214,18 +219,18 @@ export default function CoachScreen() {
         )}
       </View>
 
-      {/* Recording Indicator */}
-      {isRecording && (
+      {/* Recording/Transcribing Indicator */}
+      {audioRecorder.isRecording && (
         <View style={styles.recordingIndicator}>
           <View style={styles.recordingDot} />
-          <Text style={styles.recordingText}>Enregistrement en cours...</Text>
+          <Text style={styles.recordingText}>🎤 Parlez maintenant...</Text>
         </View>
       )}
 
       {isTranscribing && (
         <View style={styles.transcribingIndicator}>
           <ActivityIndicator size="small" color="#FFF" />
-          <Text style={styles.recordingText}>Transcription...</Text>
+          <Text style={styles.recordingText}>Transcription en cours...</Text>
         </View>
       )}
 
@@ -244,20 +249,30 @@ export default function CoachScreen() {
           {coachMessages.length === 0 ? (
             <View style={styles.welcome}>
               <View style={styles.welcomeAvatar}>
-                <Ionicons name="nutrition" size={40} color="#9C27B0" />
+                <Ionicons name="mic" size={40} color="#9C27B0" />
               </View>
-              <Text style={styles.welcomeTitle}>Coach Nutrition IA</Text>
+              <Text style={styles.welcomeTitle}>Coach Nutrition Vocal</Text>
               <Text style={styles.welcomeText}>
-                Je suis votre coach personnel. Parlez-moi ou écrivez vos questions sur la nutrition !
+                Parlez-moi ! Appuyez sur le bouton micro et posez votre question à voix haute. Je vous répondrai également à voix haute.
               </Text>
               
-              {/* Voice Hint */}
-              <View style={styles.voiceHint}>
-                <Ionicons name="mic" size={20} color={colors.primary} />
-                <Text style={styles.voiceHintText}>
-                  Appuyez sur le micro pour parler
-                </Text>
+              {/* Voice Instructions */}
+              <View style={styles.voiceInstructions}>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
+                  <Text style={styles.instructionText}>Appuyez sur le bouton 🎤</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
+                  <Text style={styles.instructionText}>Posez votre question à voix haute</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>3</Text></View>
+                  <Text style={styles.instructionText}>Appuyez à nouveau pour envoyer</Text>
+                </View>
               </View>
+              
+              <Text style={styles.orText}>— ou tapez une suggestion —</Text>
               
               <View style={styles.suggestions}>
                 {SUGGESTIONS.map((suggestion, index) => (
@@ -318,25 +333,32 @@ export default function CoachScreen() {
           )}
         </ScrollView>
 
-        {/* Input */}
+        {/* Input Area */}
         <View style={styles.inputContainer}>
-          {/* Voice Button */}
+          {/* Big Voice Button */}
           <TouchableOpacity
-            style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]}
-            onPressIn={startRecording}
-            onPressOut={stopRecording}
+            style={[
+              styles.voiceButton,
+              audioRecorder.isRecording && styles.voiceButtonRecording,
+              isTranscribing && styles.voiceButtonTranscribing,
+            ]}
+            onPress={audioRecorder.isRecording ? stopRecording : startRecording}
             disabled={isTyping || isTranscribing}
           >
-            <Ionicons 
-              name={isRecording ? 'mic' : 'mic-outline'} 
-              size={24} 
-              color="#FFF" 
-            />
+            {isTranscribing ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <Ionicons 
+                name={audioRecorder.isRecording ? 'stop' : 'mic'} 
+                size={28} 
+                color="#FFF" 
+              />
+            )}
           </TouchableOpacity>
           
           <TextInput
             style={styles.input}
-            placeholder="Posez votre question..."
+            placeholder="Ou tapez votre question..."
             value={inputText}
             onChangeText={setInputText}
             multiline
@@ -363,19 +385,23 @@ const styles = StyleSheet.create({
   coachAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   title: { fontSize: 18, fontWeight: '600', color: colors.text },
   speakButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  recordingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E53935', paddingVertical: 8, paddingHorizontal: 16 },
-  transcribingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#9C27B0', paddingVertical: 8, paddingHorizontal: 16 },
-  recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFF', marginRight: 8 },
-  recordingText: { color: '#FFF', fontSize: 13, fontWeight: '600' },
+  recordingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E53935', paddingVertical: 12, paddingHorizontal: 16 },
+  transcribingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#9C27B0', paddingVertical: 12, paddingHorizontal: 16 },
+  recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFF', marginRight: 10 },
+  recordingText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
   messagesContainer: { flex: 1, backgroundColor: colors.background },
   messagesContent: { padding: 16, paddingBottom: 100 },
-  welcome: { alignItems: 'center', paddingVertical: 40 },
+  welcome: { alignItems: 'center', paddingVertical: 30 },
   welcomeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
-  welcomeTitle: { fontSize: 20, fontWeight: '700', color: colors.text, marginBottom: 8 },
-  welcomeText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20 },
-  voiceHint: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 20, marginTop: 20 },
-  voiceHintText: { fontSize: 14, color: colors.primary, fontWeight: '500', marginLeft: 8 },
-  suggestions: { marginTop: 24, width: '100%' },
+  welcomeTitle: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 8 },
+  welcomeText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20, marginBottom: 20 },
+  voiceInstructions: { backgroundColor: colors.surfaceAlt, borderRadius: 16, padding: 16, width: '100%', marginBottom: 20 },
+  instructionStep: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  stepNumberText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
+  instructionText: { fontSize: 14, color: colors.text, fontWeight: '500' },
+  orText: { fontSize: 12, color: colors.textSecondary, marginVertical: 16 },
+  suggestions: { marginTop: 8, width: '100%' },
   suggestion: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, marginBottom: 10 },
   suggestionText: { fontSize: 14, color: colors.text },
   userMessage: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 },
@@ -389,8 +415,9 @@ const styles = StyleSheet.create({
   typingBubble: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 12, borderRadius: 16 },
   typingText: { fontSize: 13, color: colors.textSecondary, marginLeft: 8 },
   inputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.surface },
-  voiceButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  voiceButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
   voiceButtonRecording: { backgroundColor: '#E53935' },
+  voiceButtonTranscribing: { backgroundColor: '#FF9800' },
   input: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: colors.text, maxHeight: 100 },
   sendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
   sendButtonDisabled: { opacity: 0.5 },
