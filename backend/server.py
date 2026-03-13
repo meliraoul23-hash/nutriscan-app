@@ -1079,6 +1079,102 @@ async def get_stripe_public_key():
     """Get Stripe public key for frontend"""
     return {"public_key": STRIPE_PUBLIC_KEY}
 
+@api_router.post("/verify-payment")
+async def verify_payment(email: str, user_id: str = None):
+    """Verify if user has paid and activate premium"""
+    try:
+        # Check Stripe for recent payments with this email
+        customers = stripe.Customer.list(email=email, limit=1)
+        
+        if customers.data:
+            customer = customers.data[0]
+            # Check if customer has active subscription
+            subscriptions = stripe.Subscription.list(customer=customer.id, status='active', limit=1)
+            
+            if subscriptions.data:
+                # User has active subscription - save to our DB
+                await db.firebase_users.update_one(
+                    {"email": email},
+                    {"$set": {
+                        "email": email,
+                        "user_id": user_id or email,
+                        "subscription_type": "premium",
+                        "stripe_customer_id": customer.id,
+                        "stripe_subscription_id": subscriptions.data[0].id,
+                        "premium_since": datetime.now(timezone.utc)
+                    }},
+                    upsert=True
+                )
+                logger.info(f"Premium activated for {email}")
+                return {"status": "premium", "message": "Votre abonnement Premium est actif!"}
+        
+        # Also check for recent checkout sessions
+        sessions = stripe.checkout.Session.list(limit=10)
+        for session in sessions.data:
+            if session.customer_email == email and session.payment_status == 'paid':
+                await db.firebase_users.update_one(
+                    {"email": email},
+                    {"$set": {
+                        "email": email,
+                        "user_id": user_id or email,
+                        "subscription_type": "premium",
+                        "stripe_session_id": session.id,
+                        "premium_since": datetime.now(timezone.utc)
+                    }},
+                    upsert=True
+                )
+                logger.info(f"Premium activated via session for {email}")
+                return {"status": "premium", "message": "Votre abonnement Premium est actif!"}
+        
+        return {"status": "free", "message": "Aucun paiement trouvé"}
+    except Exception as e:
+        logger.error(f"Verify payment error: {str(e)}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.get("/check-premium/{email}")
+async def check_premium_status(email: str):
+    """Check if user has premium subscription"""
+    # Check our local DB first
+    firebase_user = await db.firebase_users.find_one({"email": email})
+    if firebase_user and firebase_user.get("subscription_type") == "premium":
+        return {"is_premium": True, "subscription_type": "premium"}
+    
+    # Check Stripe
+    try:
+        customers = stripe.Customer.list(email=email, limit=1)
+        if customers.data:
+            customer = customers.data[0]
+            subscriptions = stripe.Subscription.list(customer=customer.id, status='active', limit=1)
+            if subscriptions.data:
+                # Update our DB
+                await db.firebase_users.update_one(
+                    {"email": email},
+                    {"$set": {"subscription_type": "premium", "email": email}},
+                    upsert=True
+                )
+                return {"is_premium": True, "subscription_type": "premium"}
+    except Exception as e:
+        logger.error(f"Check premium error: {str(e)}")
+    
+    return {"is_premium": False, "subscription_type": "free"}
+
+# Activate premium for user who already paid
+@api_router.post("/activate-premium")
+async def activate_premium_manual(email: str):
+    """Manually activate premium for a user (for support)"""
+    await db.firebase_users.update_one(
+        {"email": email},
+        {"$set": {
+            "email": email,
+            "subscription_type": "premium",
+            "premium_since": datetime.now(timezone.utc),
+            "activated_manually": True
+        }},
+        upsert=True
+    )
+    logger.info(f"Premium manually activated for {email}")
+    return {"status": "success", "message": f"Premium activé pour {email}"}
+
 # ============== HEALTH GOALS ==============
 class HealthGoal(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))

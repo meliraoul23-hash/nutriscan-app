@@ -287,6 +287,9 @@ export default function NutriScanApp() {
       }
       if (firebaseUser) {
         const appUser = formatUser(firebaseUser);
+        // Check premium status from backend
+        const premiumStatus = await checkPremiumStatus(appUser.email);
+        appUser.subscription_type = premiumStatus;
         await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
         setUser(appUser);
         setCurrentScreen('main');
@@ -337,6 +340,9 @@ export default function NutriScanApp() {
       }
       if (firebaseUser) {
         const appUser = formatUser(firebaseUser);
+        // Check premium status from backend
+        const premiumStatus = await checkPremiumStatus(appUser.email);
+        appUser.subscription_type = premiumStatus;
         await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
         setUser(appUser);
         setCurrentScreen('main');
