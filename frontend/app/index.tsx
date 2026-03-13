@@ -15,6 +15,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -1801,8 +1802,7 @@ export default function NutriScanApp() {
         // On web, redirect to Stripe checkout
         window.location.href = checkout_url;
       } else {
-        // On mobile (iOS/Android), use Linking to open the URL
-        const { Linking } = await import('react-native');
+        // On mobile (iOS/Android), use Linking directly (imported at top)
         console.log('Opening URL on mobile:', checkout_url);
         await Linking.openURL(checkout_url);
       }
