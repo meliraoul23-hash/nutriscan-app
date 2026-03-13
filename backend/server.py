@@ -877,6 +877,9 @@ async def search_healing_foods(condition: str):
     return results
 
 # ============== WEEKLY MENU GENERATION ==============
+class MenuRequest(BaseModel):
+    family_size: int = 2
+
 @api_router.post("/generate-menu")
 async def generate_weekly_menu(request: Request):
     """Generate personalized weekly meal plan using AI"""
@@ -888,6 +891,13 @@ async def generate_weekly_menu(request: Request):
     
     if user.subscription_type != "premium":
         raise HTTPException(status_code=403, detail="Fonctionnalité Premium requise")
+    
+    # Get family size from request body
+    try:
+        body = await request.json()
+        family_size = body.get('family_size', 2)
+    except:
+        family_size = 2
     
     # Get user's scan history for personalization
     scans = await db.scan_history.find({"user_id": user.user_id}).sort('timestamp', -1).limit(20).to_list(20)
@@ -905,18 +915,25 @@ async def generate_weekly_menu(request: Request):
             products_context += f"- {scan['product_name']} (Score: {scan['health_score']}/100)\n"
     
     try:
+        menu_system = f"""Tu es un nutritionniste expert. Génère un menu hebdomadaire sain et équilibré pour {family_size} personne(s).
+        Le menu doit être adapté aux habitudes alimentaires de l'utilisateur tout en proposant des alternatives plus saines.
+        
+        IMPORTANT: La liste de courses doit inclure les QUANTITÉS adaptées pour {family_size} personne(s).
+        Exemple: "500g de poulet", "1kg de riz", "6 oeufs", etc.
+        
+        Réponds en JSON avec la structure suivante:
+        {{
+            "samedi": {{"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."}},
+            "dimanche": {{...}},
+            ... (tous les jours jusqu'à vendredi)
+            "liste_courses": ["500g de poulet", "1kg de riz", "6 oeufs", ...],
+            "nombre_personnes": {family_size}
+        }}"""
+        
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"menu_{user.user_id}_{datetime.now().strftime('%Y%m%d')}",
-            system_message="""Tu es un nutritionniste expert. Génère un menu hebdomadaire sain et équilibré.
-            Le menu doit être adapté aux habitudes alimentaires de l'utilisateur tout en proposant des alternatives plus saines.
-            Réponds en JSON avec la structure suivante:
-            {
-                "samedi": {"petit_dejeuner": "...", "dejeuner": "...", "diner": "...", "collation": "..."},
-                "dimanche": {...},
-                ... (tous les jours jusqu'à vendredi)
-                "liste_courses": ["item1", "item2", ...]
-            }"""
+            system_message=menu_system
         ).with_model("openai", "gpt-5.2")
         
         prompt = f"""Génère un menu hebdomadaire sain (du samedi au vendredi) pour une personne.
@@ -969,11 +986,17 @@ async def ai_coach_chat(request: Request, body: CoachMessage):
         raise HTTPException(status_code=403, detail="Fonctionnalité Premium requise")
     
     try:
-        # Get user's scan history for context
-        history = await db.scan_history.find({"user_id": user.email}).sort('timestamp', -1).limit(10).to_list(10)
+        # Get user's scan history for context - try multiple identifiers
+        history = await db.scan_history.find({"user_id": user.email}).sort('timestamp', -1).limit(15).to_list(15)
+        if not history:
+            history = await db.scan_history.find({"user_id": user.user_id}).sort('timestamp', -1).limit(15).to_list(15)
+        if not history:
+            # Get all recent scans as fallback
+            history = await db.scan_history.find().sort('timestamp', -1).limit(10).to_list(10)
+        
         history_context = ""
         if history:
-            history_context = "\n".join([f"- {h.get('product_name', 'Produit')} (Score: {h.get('health_score', 'N/A')})" for h in history])
+            history_context = "\n".join([f"- {h.get('product_name', 'Produit inconnu')} (Score: {h.get('health_score', 'N/A')}/100)" for h in history])
         
         # Get user's health goals
         goals = await db.health_goals.find({"user_id": user.email}).to_list(10)
@@ -982,25 +1005,27 @@ async def ai_coach_chat(request: Request, body: CoachMessage):
             goals_context = ", ".join([g.get('name', '') for g in goals])
         
         # Build context for AI
+        no_products_msg = "Aucun produit scanné récemment"
         system_prompt = f"""Tu es NutriCoach, un coach nutrition IA expert et bienveillant pour l'application NutriScan.
 
 PROFIL UTILISATEUR:
 - Email: {user.email}
 - Objectifs santé: {goals_context if goals_context else 'Non définis'}
-- Derniers produits scannés:
-{history_context if history_context else '- Aucun historique récent'}
+- Derniers produits scannés ({len(history)} produits):
+{history_context if history_context else no_products_msg}
 
 TON RÔLE:
 - Donner des conseils nutritionnels personnalisés et pratiques
-- Répondre aux questions sur l'alimentation et la santé
-- Suggérer des alternatives plus saines basées sur l'historique
+- Analyser les produits scannés par l'utilisateur quand il le demande
+- Suggérer des alternatives plus saines
 - Motiver et encourager l'utilisateur dans ses objectifs
 - Expliquer les scores nutritionnels et les additifs
 
 RÈGLES:
 - Réponds toujours en français
-- Sois concis mais informatif (max 200 mots)
+- Sois concis mais informatif (max 250 mots)
 - Utilise des emojis pour rendre le message plus engageant
+- Quand l'utilisateur demande d'analyser ses produits, base-toi sur la liste ci-dessus
 - Ne prescris jamais de médicaments ou traitements médicaux
 - Recommande de consulter un professionnel pour les problèmes de santé graves
 - Termine toujours par une question ou une suggestion actionnable"""

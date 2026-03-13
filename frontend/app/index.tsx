@@ -238,6 +238,7 @@ export default function NutriScanApp() {
   
   // Shopping list state
   const [shoppingList, setShoppingList] = useState<string[]>([]);
+  const [familySize, setFamilySize] = useState<number>(2);
   
   // Offline cache
   const [cachedProducts, setCachedProducts] = useState<{[key: string]: Product}>({});
@@ -906,19 +907,33 @@ export default function NutriScanApp() {
       setCurrentScreen('premium');
       return;
     }
+    
+    // Ask for family size
+    Alert.alert(
+      'Nombre de personnes',
+      'Pour combien de personnes voulez-vous générer le menu ?',
+      [
+        { text: '1', onPress: () => generateMenuWithSize(1) },
+        { text: '2', onPress: () => generateMenuWithSize(2) },
+        { text: '3-4', onPress: () => generateMenuWithSize(4) },
+        { text: '5+', onPress: () => generateMenuWithSize(6) },
+      ]
+    );
+  };
+  
+  const generateMenuWithSize = async (size: number) => {
+    setFamilySize(size);
     setMenuLoading(true);
     try {
-      // Send email and user_id as query params for Firebase authentication
       const params = new URLSearchParams({
-        email: user.email,
-        user_id: user.user_id
+        email: user!.email,
+        user_id: user!.user_id
       });
-      const response = await axios.post(`${API_URL}/generate-menu?${params.toString()}`, {});
+      const response = await axios.post(`${API_URL}/generate-menu?${params.toString()}`, { family_size: size });
       setWeeklyMenu(response.data);
       // Save shopping list separately
       if (response.data.liste_courses) {
         setShoppingList(response.data.liste_courses);
-        // Also save to AsyncStorage for persistence
         await AsyncStorage.setItem('shopping_list', JSON.stringify(response.data.liste_courses));
       }
       setCurrentScreen('menu');
@@ -1631,13 +1646,13 @@ export default function NutriScanApp() {
 
   // Rankings Tab
   const renderRankingsTab = () => {
-    // Filter only products with score 100
-    const topProducts = rankings.filter(item => item.health_score === 100);
+    // Filter products with score >= 85 (excellent products)
+    const topProducts = rankings.filter(item => item.health_score >= 85).sort((a, b) => b.health_score - a.health_score);
     
     return (
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
         <Text style={styles.pageTitle}>Classement Santé</Text>
-        <Text style={styles.pageSubtitle}>Les meilleurs produits (Score 100/100)</Text>
+        <Text style={styles.pageSubtitle}>Les meilleurs produits (Score 85+)</Text>
 
         {rankings.length === 0 ? (
           <View style={styles.emptyStateLarge}>
@@ -1650,11 +1665,14 @@ export default function NutriScanApp() {
         ) : topProducts.length === 0 ? (
           <View style={styles.emptyStateLarge}>
             <Ionicons name="trophy-outline" size={64} color={colors.textSecondary} />
-            <Text style={styles.emptyStateTitle}>Aucun produit parfait trouvé</Text>
-            <Text style={styles.emptyStateSubtext}>Aucun produit avec un score de 100 pour le moment</Text>
+            <Text style={styles.emptyStateTitle}>Chargement en cours...</Text>
+            <Text style={styles.emptyStateSubtext}>Récupération des meilleurs produits</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchRankings}>
+              <Text style={styles.retryButtonText}>Actualiser</Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          topProducts.map((item, index) => (
+          topProducts.slice(0, 20).map((item, index) => (
             <TouchableOpacity key={index} style={styles.rankingItem} onPress={() => fetchProduct(item.barcode)}>
               <View style={styles.rankingPosition}>
                 <Text style={styles.rankingPositionText}>{index + 1}</Text>
@@ -1670,8 +1688,8 @@ export default function NutriScanApp() {
                 <Text style={styles.rankingName} numberOfLines={1}>{item.name}</Text>
                 <Text style={styles.rankingBrand} numberOfLines={1}>{item.brand || 'Marque inconnue'}</Text>
               </View>
-              <View style={[styles.rankingScore, { backgroundColor: colors.success }]}>
-                <Text style={styles.rankingScoreText}>100</Text>
+              <View style={[styles.rankingScore, { backgroundColor: getScoreColor(item.health_score) }]}>
+                <Text style={styles.rankingScoreText}>{item.health_score}</Text>
               </View>
             </TouchableOpacity>
           ))
