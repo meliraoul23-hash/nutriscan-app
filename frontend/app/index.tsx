@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext, useRef } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
+import { Audio } from 'expo-av';
 
 // Firebase imports
 import { 
@@ -235,6 +236,11 @@ export default function NutriScanApp() {
   const [coachMessages, setCoachMessages] = useState<any[]>([]);
   const [coachInput, setCoachInput] = useState('');
   const [coachLoading, setCoachLoading] = useState(false);
+  
+  // Voice recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   
   // Shopping list state
   const [shoppingList, setShoppingList] = useState<string[]>([]);
@@ -975,8 +981,9 @@ export default function NutriScanApp() {
   };
 
   // AI Coach - Send message
-  const sendCoachMessage = async () => {
-    if (!coachInput.trim()) return;
+  const sendCoachMessage = async (messageToSend?: string) => {
+    const message = messageToSend || coachInput.trim();
+    if (!message) return;
     if (!user) {
       Alert.alert('Connexion requise', 'Connectez-vous pour utiliser le coach');
       setCurrentScreen('auth');
@@ -988,14 +995,13 @@ export default function NutriScanApp() {
       return;
     }
     
-    const userMessage = coachInput.trim();
     setCoachInput('');
-    setCoachMessages(prev => [...prev, { type: 'user', text: userMessage }]);
+    setCoachMessages(prev => [...prev, { type: 'user', text: message }]);
     setCoachLoading(true);
     
     try {
       const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
-      const response = await axios.post(`${API_URL}/coach?${params.toString()}`, { message: userMessage });
+      const response = await axios.post(`${API_URL}/coach?${params.toString()}`, { message });
       setCoachMessages(prev => [...prev, { type: 'coach', text: response.data.response }]);
     } catch (error: any) {
       console.log('Coach error:', error.response?.data);
@@ -1003,6 +1009,88 @@ export default function NutriScanApp() {
     } finally {
       setCoachLoading(false);
     }
+  };
+
+  // Voice Recording Functions
+  const startRecording = async () => {
+    try {
+      // Request permissions
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission requise', 'Autorisez l\'accès au microphone pour utiliser la voix');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(recording);
+      setIsRecording(true);
+      console.log('Recording started');
+    } catch (err) {
+      console.error('Failed to start recording', err);
+      Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+    
+    console.log('Stopping recording...');
+    setIsRecording(false);
+    setTranscribing(true);
+    
+    try {
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+      });
+      
+      const uri = recording.getURI();
+      console.log('Recording stopped and stored at', uri);
+      
+      if (uri) {
+        // Read the file and convert to base64
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64data = reader.result as string;
+          const base64Audio = base64data.split(',')[1];
+          
+          try {
+            // Send to transcription API
+            const transcriptResponse = await axios.post(`${API_URL}/transcribe`, { audio: base64Audio });
+            const transcribedText = transcriptResponse.data.text;
+            
+            if (transcribedText) {
+              setCoachInput(transcribedText);
+              // Optionally auto-send the message
+              // sendCoachMessage(transcribedText);
+            }
+          } catch (error) {
+            console.log('Transcription error:', error);
+            Alert.alert('Erreur', 'Impossible de transcrire l\'audio. Essayez de taper votre message.');
+          } finally {
+            setTranscribing(false);
+          }
+        };
+        reader.readAsDataURL(blob);
+      }
+    } catch (err) {
+      console.error('Failed to stop recording', err);
+      setTranscribing(false);
+      Alert.alert('Erreur', 'Erreur lors de l\'enregistrement');
+    }
+    
+    setRecording(null);
   };
 
   // Fetch existing menus
@@ -2112,23 +2200,45 @@ export default function NutriScanApp() {
 
       {/* Input */}
       <View style={styles.coachInputContainer}>
+        {/* Voice Recording Button */}
+        <TouchableOpacity 
+          style={[styles.voiceButton, isRecording && styles.voiceButtonRecording]} 
+          onPress={isRecording ? stopRecording : startRecording}
+          disabled={transcribing}
+        >
+          {transcribing ? (
+            <ActivityIndicator size="small" color="#FFF" />
+          ) : (
+            <Ionicons name={isRecording ? "stop" : "mic"} size={22} color="#FFF" />
+          )}
+        </TouchableOpacity>
+        
         <TextInput
           style={styles.coachInput}
-          placeholder="Posez votre question..."
+          placeholder={isRecording ? "Parlez maintenant..." : transcribing ? "Transcription..." : "Posez votre question..."}
           placeholderTextColor={colors.textSecondary}
           value={coachInput}
           onChangeText={setCoachInput}
           multiline
           maxLength={500}
+          editable={!isRecording && !transcribing}
         />
         <TouchableOpacity 
-          style={[styles.coachSendButton, !coachInput.trim() && { opacity: 0.5 }]} 
-          onPress={sendCoachMessage}
-          disabled={!coachInput.trim() || coachLoading}
+          style={[styles.coachSendButton, (!coachInput.trim() || isRecording || transcribing) && { opacity: 0.5 }]} 
+          onPress={() => sendCoachMessage()}
+          disabled={!coachInput.trim() || coachLoading || isRecording || transcribing}
         >
           <Ionicons name="send" size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
+      
+      {/* Recording indicator */}
+      {isRecording && (
+        <View style={styles.recordingIndicator}>
+          <View style={styles.recordingDot} />
+          <Text style={styles.recordingText}>Enregistrement en cours... Appuyez pour arrêter</Text>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 
@@ -3479,6 +3589,13 @@ const styles = StyleSheet.create({
   coachInputContainer: { flexDirection: 'row', alignItems: 'flex-end', padding: 12, backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.surface },
   coachInput: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: colors.text, maxHeight: 100 },
   coachSendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
+  
+  // Voice Recording
+  voiceButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  voiceButtonRecording: { backgroundColor: '#E53935' },
+  recordingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E53935', paddingVertical: 8, paddingHorizontal: 16 },
+  recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFF', marginRight: 8 },
+  recordingText: { color: '#FFF', fontSize: 12, fontWeight: '600' },
 
   // Goal Type Selection
   goalTypeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.surface },

@@ -1091,6 +1091,52 @@ async def get_coach_history(request: Request):
     
     return conversations
 
+# Audio transcription endpoint
+from fastapi import UploadFile, File
+import base64
+import tempfile
+
+@api_router.post("/transcribe")
+async def transcribe_audio(request: Request):
+    """Transcribe audio to text using OpenAI Whisper"""
+    try:
+        # Get the audio data from the request
+        body = await request.json()
+        audio_base64 = body.get('audio')
+        
+        if not audio_base64:
+            raise HTTPException(status_code=400, detail="Audio data required")
+        
+        # Decode base64 audio
+        audio_data = base64.b64decode(audio_base64)
+        
+        # Save to temp file
+        with tempfile.NamedTemporaryFile(suffix='.m4a', delete=False) as tmp_file:
+            tmp_file.write(audio_data)
+            tmp_path = tmp_file.name
+        
+        try:
+            # Use OpenAI Whisper API for transcription
+            import openai
+            openai.api_key = EMERGENT_LLM_KEY
+            openai.base_url = "https://llm.emergentagi.com/v1"
+            
+            with open(tmp_path, 'rb') as audio_file:
+                transcription = openai.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="fr"
+                )
+            
+            return {"text": transcription.text}
+        finally:
+            # Clean up temp file
+            os.unlink(tmp_path)
+            
+    except Exception as e:
+        logger.error(f"Transcription error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erreur de transcription")
+
 @api_router.get("/my-menus")
 async def get_my_menus(user: User = Depends(get_current_user)):
     """Get user's generated menus"""
