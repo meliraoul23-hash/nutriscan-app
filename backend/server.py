@@ -1393,21 +1393,26 @@ async def compare_products(barcodes: List[str]):
 
 # ============== FAVORITES ==============
 @api_router.get("/favorites")
-async def get_favorites(user: User = Depends(get_current_user)):
+async def get_favorites(request: Request):
     """Get user's favorite products"""
+    user = await get_firebase_premium_user(request)
     if not user:
-        raise HTTPException(status_code=401, detail="Connexion requise")
+        raise HTTPException(status_code=401, detail="Connexion requise. Ajoutez ?email=votre@email.com")
     
+    # Try with user_id first, then email
     favorites = await db.favorites.find({"user_id": user.user_id}, {"_id": 0}).sort('created_at', -1).to_list(50)
+    if not favorites:
+        favorites = await db.favorites.find({"user_id": user.email}, {"_id": 0}).sort('created_at', -1).to_list(50)
     return favorites
 
 @api_router.post("/favorites/{barcode}")
-async def add_favorite(barcode: str, user: User = Depends(get_current_user)):
+async def add_favorite(barcode: str, request: Request):
     """Add a product to favorites"""
+    user = await get_firebase_premium_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Connexion requise")
     
-    existing = await db.favorites.find_one({"user_id": user.user_id, "barcode": barcode})
+    existing = await db.favorites.find_one({"user_id": user.email, "barcode": barcode})
     if existing:
         return {"message": "Déjà en favoris"}
     
@@ -1421,7 +1426,7 @@ async def add_favorite(barcode: str, user: User = Depends(get_current_user)):
         p = data.get('product', {})
         favorite = {
             "id": str(uuid.uuid4()),
-            "user_id": user.user_id,
+            "user_id": user.email,
             "barcode": barcode,
             "product_name": p.get('product_name', 'Inconnu'),
             "brand": p.get('brands', ''),
@@ -1431,23 +1436,154 @@ async def add_favorite(barcode: str, user: User = Depends(get_current_user)):
             "created_at": datetime.now(timezone.utc)
         }
         await db.favorites.insert_one(favorite)
-        # Return the favorite without any potential ObjectId issues
         favorite_response = favorite.copy()
         if "_id" in favorite_response:
             del favorite_response["_id"]
         return {"message": "Ajouté aux favoris", "favorite": favorite_response}
 
 @api_router.delete("/favorites/{barcode}")
-async def remove_favorite(barcode: str, user: User = Depends(get_current_user)):
+async def remove_favorite(barcode: str, request: Request):
     """Remove a product from favorites"""
+    user = await get_firebase_premium_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Connexion requise")
     
-    result = await db.favorites.delete_one({"user_id": user.user_id, "barcode": barcode})
+    result = await db.favorites.delete_one({"user_id": user.email, "barcode": barcode})
     if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Favori non trouvé")
+        # Try with user_id
+        result = await db.favorites.delete_one({"user_id": user.user_id, "barcode": barcode})
     
     return {"message": "Retiré des favoris"}
+
+# Health Goals Endpoints
+@api_router.get("/health-goals")
+async def get_health_goals(request: Request):
+    """Get user's health goals"""
+    user = await get_firebase_premium_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    goals = await db.health_goals.find({"user_id": user.email}, {"_id": 0}).to_list(20)
+    return goals
+
+@api_router.post("/health-goals")
+async def add_health_goal(request: Request):
+    """Add a health goal"""
+    user = await get_firebase_premium_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    body = await request.json()
+    goal_type = body.get('type', '')
+    goal_name = body.get('name', '')
+    
+    if not goal_type or not goal_name:
+        raise HTTPException(status_code=400, detail="Type et nom requis")
+    
+    goal = {
+        "id": str(uuid.uuid4()),
+        "user_id": user.email,
+        "type": goal_type,
+        "name": goal_name,
+        "created_at": datetime.now(timezone.utc)
+    }
+    await db.health_goals.insert_one(goal)
+    goal_copy = goal.copy()
+    if "_id" in goal_copy:
+        del goal_copy["_id"]
+    return {"message": "Objectif ajouté", "goal": goal_copy}
+
+@api_router.delete("/health-goals/{goal_id}")
+async def remove_health_goal(goal_id: str, request: Request):
+    """Remove a health goal"""
+    user = await get_firebase_premium_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    await db.health_goals.delete_one({"id": goal_id, "user_id": user.email})
+    return {"message": "Objectif supprimé"}
+
+# Exercise Recommendations based on Health Goals
+EXERCISES_BY_GOAL = {
+    "weight_loss": [
+        {"name": "Course à pied", "duration": "30 min", "frequency": "3x/semaine", "calories": "~300 kcal", "icon": "walk"},
+        {"name": "HIIT", "duration": "20 min", "frequency": "3x/semaine", "calories": "~250 kcal", "icon": "fitness"},
+        {"name": "Natation", "duration": "45 min", "frequency": "2x/semaine", "calories": "~400 kcal", "icon": "water"},
+        {"name": "Vélo", "duration": "45 min", "frequency": "3x/semaine", "calories": "~350 kcal", "icon": "bicycle"},
+    ],
+    "muscle_gain": [
+        {"name": "Musculation", "duration": "60 min", "frequency": "4x/semaine", "calories": "~200 kcal", "icon": "barbell"},
+        {"name": "Pompes & Tractions", "duration": "30 min", "frequency": "3x/semaine", "calories": "~150 kcal", "icon": "fitness"},
+        {"name": "Squats & Fentes", "duration": "30 min", "frequency": "3x/semaine", "calories": "~180 kcal", "icon": "body"},
+        {"name": "Gainage", "duration": "15 min", "frequency": "Quotidien", "calories": "~50 kcal", "icon": "fitness"},
+    ],
+    "energy": [
+        {"name": "Yoga", "duration": "30 min", "frequency": "Quotidien", "calories": "~100 kcal", "icon": "body"},
+        {"name": "Marche rapide", "duration": "30 min", "frequency": "Quotidien", "calories": "~150 kcal", "icon": "walk"},
+        {"name": "Étirements", "duration": "15 min", "frequency": "Quotidien", "calories": "~50 kcal", "icon": "body"},
+        {"name": "Tai Chi", "duration": "30 min", "frequency": "3x/semaine", "calories": "~120 kcal", "icon": "body"},
+    ],
+    "heart_health": [
+        {"name": "Marche nordique", "duration": "45 min", "frequency": "4x/semaine", "calories": "~280 kcal", "icon": "walk"},
+        {"name": "Vélo elliptique", "duration": "30 min", "frequency": "3x/semaine", "calories": "~250 kcal", "icon": "bicycle"},
+        {"name": "Natation douce", "duration": "30 min", "frequency": "2x/semaine", "calories": "~200 kcal", "icon": "water"},
+        {"name": "Danse", "duration": "45 min", "frequency": "2x/semaine", "calories": "~300 kcal", "icon": "musical-notes"},
+    ],
+    "stress": [
+        {"name": "Méditation", "duration": "15 min", "frequency": "Quotidien", "calories": "~20 kcal", "icon": "leaf"},
+        {"name": "Yoga relaxant", "duration": "30 min", "frequency": "3x/semaine", "calories": "~80 kcal", "icon": "body"},
+        {"name": "Respiration profonde", "duration": "10 min", "frequency": "2x/jour", "calories": "~10 kcal", "icon": "leaf"},
+        {"name": "Promenade nature", "duration": "45 min", "frequency": "2x/semaine", "calories": "~180 kcal", "icon": "leaf"},
+    ],
+    "digestion": [
+        {"name": "Marche après repas", "duration": "15 min", "frequency": "Après chaque repas", "calories": "~50 kcal", "icon": "walk"},
+        {"name": "Yoga digestif", "duration": "20 min", "frequency": "Quotidien", "calories": "~60 kcal", "icon": "body"},
+        {"name": "Vélo léger", "duration": "30 min", "frequency": "3x/semaine", "calories": "~150 kcal", "icon": "bicycle"},
+    ],
+    "sleep": [
+        {"name": "Yoga du soir", "duration": "20 min", "frequency": "Chaque soir", "calories": "~60 kcal", "icon": "moon"},
+        {"name": "Étirements relaxants", "duration": "10 min", "frequency": "Avant le coucher", "calories": "~30 kcal", "icon": "body"},
+        {"name": "Marche en soirée", "duration": "20 min", "frequency": "Quotidien", "calories": "~80 kcal", "icon": "walk"},
+    ],
+    "immunity": [
+        {"name": "Course légère", "duration": "30 min", "frequency": "3x/semaine", "calories": "~250 kcal", "icon": "walk"},
+        {"name": "Natation", "duration": "30 min", "frequency": "2x/semaine", "calories": "~250 kcal", "icon": "water"},
+        {"name": "Yoga", "duration": "30 min", "frequency": "3x/semaine", "calories": "~100 kcal", "icon": "body"},
+    ]
+}
+
+@api_router.get("/exercises")
+async def get_exercises(request: Request):
+    """Get exercise recommendations based on user's health goals"""
+    user = await get_firebase_premium_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    # Get user's goals
+    goals = await db.health_goals.find({"user_id": user.email}, {"_id": 0}).to_list(20)
+    
+    exercises = []
+    goal_types_seen = set()
+    
+    for goal in goals:
+        goal_type = goal.get('type', '')
+        if goal_type in EXERCISES_BY_GOAL and goal_type not in goal_types_seen:
+            goal_types_seen.add(goal_type)
+            for exercise in EXERCISES_BY_GOAL[goal_type]:
+                exercise_copy = exercise.copy()
+                exercise_copy['goal_type'] = goal_type
+                exercise_copy['goal_name'] = goal.get('name', '')
+                exercises.append(exercise_copy)
+    
+    # If no goals, return general exercises
+    if not exercises:
+        exercises = [
+            {"name": "Marche", "duration": "30 min", "frequency": "Quotidien", "calories": "~150 kcal", "icon": "walk", "goal_type": "general", "goal_name": "Santé générale"},
+            {"name": "Yoga", "duration": "20 min", "frequency": "3x/semaine", "calories": "~80 kcal", "icon": "body", "goal_type": "general", "goal_name": "Bien-être"},
+            {"name": "Vélo", "duration": "30 min", "frequency": "2x/semaine", "calories": "~200 kcal", "icon": "bicycle", "goal_type": "general", "goal_name": "Cardio"},
+        ]
+    
+    return {"exercises": exercises, "goals_count": len(goals)}
 
 # Include router and middleware
 app.include_router(api_router)

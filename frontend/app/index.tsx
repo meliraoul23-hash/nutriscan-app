@@ -206,7 +206,7 @@ export default function NutriScanApp() {
 
   // App state
   const [currentTab, setCurrentTab] = useState<'home' | 'history' | 'search' | 'rankings' | 'profile'>('home');
-  const [currentScreen, setCurrentScreen] = useState<'main' | 'scanner' | 'product' | 'auth' | 'compare' | 'goals' | 'menu' | 'favorites'>('main');
+  const [currentScreen, setCurrentScreen] = useState<'main' | 'scanner' | 'product' | 'auth' | 'compare' | 'goals' | 'menu' | 'favorites' | 'exercises'>('main');
   
   // Data state
   const [product, setProduct] = useState<Product | null>(null);
@@ -218,7 +218,7 @@ export default function NutriScanApp() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // NEW: Goals, Comparison, Favorites, Menu state
+  // NEW: Goals, Comparison, Favorites, Menu, Exercises state
   const [healthGoals, setHealthGoals] = useState<any[]>([]);
   const [goalTypes, setGoalTypes] = useState<any>({});
   const [favorites, setFavorites] = useState<any[]>([]);
@@ -228,6 +228,7 @@ export default function NutriScanApp() {
   const [comparisonResult, setComparisonResult] = useState<any>(null);
   const [goalAlerts, setGoalAlerts] = useState<any[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('yearly');
+  const [exercises, setExercises] = useState<any[]>([]);
   
   // Offline cache
   const [cachedProducts, setCachedProducts] = useState<{[key: string]: Product}>({});
@@ -752,10 +753,10 @@ export default function NutriScanApp() {
 
   // Fetch Favorites
   const fetchFavorites = async () => {
-    if (!user || !token) return;
+    if (!user) return;
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      const response = await axios.get(`${API_URL}/favorites`, { headers });
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      const response = await axios.get(`${API_URL}/favorites?${params.toString()}`);
       setFavorites(response.data);
     } catch (error) {
       console.log('Error fetching favorites:', error);
@@ -764,13 +765,13 @@ export default function NutriScanApp() {
 
   // Add to Favorites
   const addToFavorites = async (barcode: string) => {
-    if (!user || !token) {
+    if (!user) {
       Alert.alert('Connexion requise', 'Connectez-vous pour ajouter aux favoris');
       return;
     }
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      await axios.post(`${API_URL}/favorites/${barcode}`, {}, { headers });
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      await axios.post(`${API_URL}/favorites/${barcode}?${params.toString()}`);
       fetchFavorites();
       Alert.alert('Succès', 'Ajouté aux favoris !');
     } catch (error: any) {
@@ -780,10 +781,10 @@ export default function NutriScanApp() {
 
   // Remove from Favorites
   const removeFromFavorites = async (barcode: string) => {
-    if (!user || !token) return;
+    if (!user) return;
     try {
-      const headers = { Authorization: `Bearer ${token}` };
-      await axios.delete(`${API_URL}/favorites/${barcode}`, { headers });
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      await axios.delete(`${API_URL}/favorites/${barcode}?${params.toString()}`);
       fetchFavorites();
     } catch (error) {
       console.log('Error removing favorite:', error);
@@ -793,6 +794,60 @@ export default function NutriScanApp() {
   // Check if product is favorite
   const isFavorite = (barcode: string) => {
     return favorites.some(f => f.barcode === barcode);
+  };
+
+  // Fetch Health Goals
+  const fetchHealthGoals = async () => {
+    if (!user) return;
+    try {
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      const response = await axios.get(`${API_URL}/health-goals?${params.toString()}`);
+      setHealthGoals(response.data);
+    } catch (error) {
+      console.log('Error fetching health goals:', error);
+    }
+  };
+
+  // Add Health Goal
+  const addHealthGoal = async (type: string, name: string) => {
+    if (!user) {
+      Alert.alert('Connexion requise', 'Connectez-vous pour ajouter des objectifs');
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      await axios.post(`${API_URL}/health-goals?${params.toString()}`, { type, name });
+      fetchHealthGoals();
+      fetchExercises();
+      Alert.alert('Succès', 'Objectif ajouté !');
+    } catch (error: any) {
+      Alert.alert('Erreur', error.response?.data?.detail || 'Impossible d\'ajouter l\'objectif');
+    }
+  };
+
+  // Remove Health Goal
+  const removeHealthGoal = async (goalId: string) => {
+    if (!user) return;
+    try {
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      await axios.delete(`${API_URL}/health-goals/${goalId}?${params.toString()}`);
+      fetchHealthGoals();
+      fetchExercises();
+    } catch (error) {
+      console.log('Error removing goal:', error);
+    }
+  };
+
+  // Fetch Exercises based on goals
+  const fetchExercises = async () => {
+    if (!user) return;
+    try {
+      const params = new URLSearchParams({ email: user.email, user_id: user.user_id });
+      const response = await axios.get(`${API_URL}/exercises?${params.toString()}`);
+      setExercises(response.data.exercises || []);
+    } catch (error) {
+      console.log('Error fetching exercises:', error);
+    }
   };
 
   // Generate Weekly Menu (Premium)
@@ -1606,45 +1661,145 @@ export default function NutriScanApp() {
   );
 
   // Goals Screen
-  const renderGoalsScreen = () => (
+  const renderGoalsScreen = () => {
+    const goalOptions = [
+      { type: 'weight_loss', name: 'Perte de poids', icon: 'scale-outline' },
+      { type: 'muscle_gain', name: 'Prise de muscle', icon: 'barbell-outline' },
+      { type: 'energy', name: 'Plus d\'énergie', icon: 'flash-outline' },
+      { type: 'heart_health', name: 'Santé cardiaque', icon: 'heart-outline' },
+      { type: 'stress', name: 'Réduire le stress', icon: 'leaf-outline' },
+      { type: 'digestion', name: 'Meilleure digestion', icon: 'nutrition-outline' },
+      { type: 'sleep', name: 'Meilleur sommeil', icon: 'moon-outline' },
+      { type: 'immunity', name: 'Renforcer l\'immunité', icon: 'shield-checkmark-outline' },
+    ];
+
+    return (
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.screenHeader}>
+          <TouchableOpacity onPress={goHome}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.screenTitle}>Objectifs Santé</Text>
+          <TouchableOpacity onPress={() => { fetchExercises(); setCurrentScreen('exercises'); }}>
+            <Ionicons name="fitness" size={28} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Button to view exercises */}
+        <TouchableOpacity 
+          style={styles.exercisesLinkButton} 
+          onPress={() => { fetchExercises(); setCurrentScreen('exercises'); }}
+        >
+          <Ionicons name="fitness" size={24} color="#FFF" />
+          <Text style={styles.exercisesLinkText}>Voir mes exercices recommandés</Text>
+          <Ionicons name="chevron-forward" size={20} color="#FFF" />
+        </TouchableOpacity>
+
+        {/* Add goal section */}
+        <Text style={styles.sectionTitle}>Ajouter un objectif</Text>
+        <View style={styles.goalOptionsGrid}>
+          {goalOptions.map((option) => {
+            const isSelected = healthGoals.some(g => g.type === option.type);
+            return (
+              <TouchableOpacity 
+                key={option.type} 
+                style={[styles.goalOptionCard, isSelected && styles.goalOptionCardSelected]}
+                onPress={() => isSelected ? null : addHealthGoal(option.type, option.name)}
+              >
+                <Ionicons 
+                  name={option.icon as any} 
+                  size={32} 
+                  color={isSelected ? colors.primary : colors.textSecondary} 
+                />
+                <Text style={[styles.goalOptionText, isSelected && styles.goalOptionTextSelected]}>
+                  {option.name}
+                </Text>
+                {isSelected && (
+                  <Ionicons name="checkmark-circle" size={20} color={colors.primary} style={styles.goalCheckmark} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Current goals */}
+        {healthGoals.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Mes objectifs actifs ({healthGoals.length})</Text>
+            {healthGoals.map((goal, index) => (
+              <View key={index} style={styles.goalCard}>
+                <View style={styles.goalCardHeader}>
+                  <View style={styles.goalIconContainer}>
+                    <Ionicons name="flag" size={24} color={colors.primary} />
+                  </View>
+                  <View style={styles.goalCardInfo}>
+                    <Text style={styles.goalCardTitle}>{goal.name}</Text>
+                    <Text style={styles.goalCardDescription}>{goal.type}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => removeHealthGoal(goal.id)}>
+                    <Ionicons name="trash-outline" size={20} color={colors.error} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
+      </ScrollView>
+    );
+  };
+
+  // Exercises Screen
+  const renderExercisesScreen = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
       <View style={styles.screenHeader}>
-        <TouchableOpacity onPress={goHome}>
+        <TouchableOpacity onPress={() => setCurrentScreen('goals')}>
           <Ionicons name="arrow-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text style={styles.screenTitle}>Objectifs Santé</Text>
-        <TouchableOpacity onPress={() => setShowGoalModal(true)}>
-          <Ionicons name="add-circle" size={28} color={colors.primary} />
-        </TouchableOpacity>
+        <Text style={styles.screenTitle}>Exercices Recommandés</Text>
+        <Ionicons name="fitness" size={24} color={colors.primary} />
       </View>
 
-      {healthGoals.length === 0 ? (
+      {exercises.length === 0 ? (
         <View style={styles.emptyStateLarge}>
-          <Ionicons name="flag-outline" size={64} color={colors.textSecondary} />
-          <Text style={styles.emptyStateTitle}>Aucun objectif</Text>
-          <Text style={styles.emptyStateSubtext}>Définissez des objectifs pour suivre votre alimentation</Text>
-          <TouchableOpacity style={styles.addGoalButton} onPress={() => setShowGoalModal(true)}>
-            <Ionicons name="add" size={20} color="#FFF" />
-            <Text style={styles.addGoalButtonText}>Ajouter un objectif</Text>
+          <Ionicons name="fitness-outline" size={64} color={colors.textSecondary} />
+          <Text style={styles.emptyStateTitle}>Aucun exercice</Text>
+          <Text style={styles.emptyStateSubtext}>Ajoutez des objectifs santé pour obtenir des recommandations d'exercices personnalisées</Text>
+          <TouchableOpacity style={styles.addGoalButton} onPress={() => setCurrentScreen('goals')}>
+            <Ionicons name="flag" size={20} color="#FFF" />
+            <Text style={styles.addGoalButtonText}>Définir des objectifs</Text>
           </TouchableOpacity>
         </View>
       ) : (
-        healthGoals.map((goal, index) => (
-          <View key={index} style={styles.goalCard}>
-            <View style={styles.goalCardHeader}>
-              <View style={styles.goalIconContainer}>
-                <Ionicons name={goal.icon || 'flag'} size={24} color={colors.primary} />
+        <>
+          <Text style={styles.exerciseIntro}>
+            Basé sur vos {healthGoals.length} objectif(s), voici les exercices recommandés :
+          </Text>
+          {exercises.map((exercise, index) => (
+            <View key={index} style={styles.exerciseCard}>
+              <View style={styles.exerciseIconContainer}>
+                <Ionicons name={exercise.icon || 'fitness'} size={32} color={colors.primary} />
               </View>
-              <View style={styles.goalCardInfo}>
-                <Text style={styles.goalCardTitle}>{goal.name}</Text>
-                <Text style={styles.goalCardDescription}>{goal.description}</Text>
+              <View style={styles.exerciseInfo}>
+                <Text style={styles.exerciseName}>{exercise.name}</Text>
+                <Text style={styles.exerciseGoal}>Pour : {exercise.goal_name}</Text>
+                <View style={styles.exerciseDetails}>
+                  <View style={styles.exerciseDetail}>
+                    <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                    <Text style={styles.exerciseDetailText}>{exercise.duration}</Text>
+                  </View>
+                  <View style={styles.exerciseDetail}>
+                    <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                    <Text style={styles.exerciseDetailText}>{exercise.frequency}</Text>
+                  </View>
+                  <View style={styles.exerciseDetail}>
+                    <Ionicons name="flame-outline" size={14} color={colors.warning} />
+                    <Text style={styles.exerciseDetailText}>{exercise.calories}</Text>
+                  </View>
+                </View>
               </View>
-              <TouchableOpacity onPress={() => deleteGoal(goal.id)}>
-                <Ionicons name="trash-outline" size={20} color={colors.error} />
-              </TouchableOpacity>
             </View>
-          </View>
-        ))
+          ))}
+        </>
       )}
     </ScrollView>
   );
@@ -2481,6 +2636,7 @@ export default function NutriScanApp() {
       {currentScreen === 'scanner' && renderScannerScreen()}
       {currentScreen === 'product' && renderProductScreen()}
       {currentScreen === 'goals' && renderGoalsScreen()}
+      {currentScreen === 'exercises' && renderExercisesScreen()}
       {currentScreen === 'favorites' && renderFavoritesScreen()}
       {currentScreen === 'compare' && renderCompareScreen()}
       {currentScreen === 'menu' && renderMenuScreen()}
@@ -2897,6 +3053,29 @@ const styles = StyleSheet.create({
   goalCardDescription: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
   addGoalButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, marginTop: 20 },
   addGoalButtonText: { color: '#FFF', fontSize: 16, fontWeight: '600', marginLeft: 8 },
+  
+  // Goal Options Grid
+  goalOptionsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginTop: 12 },
+  goalOptionCard: { width: '48%', backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, alignItems: 'center', borderWidth: 2, borderColor: 'transparent' },
+  goalOptionCardSelected: { borderColor: colors.primary, backgroundColor: colors.surfaceAlt },
+  goalOptionText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary, marginTop: 8, textAlign: 'center' },
+  goalOptionTextSelected: { color: colors.primary, fontWeight: '600' },
+  goalCheckmark: { position: 'absolute', top: 8, right: 8 },
+  
+  // Exercises Link Button
+  exercisesLinkButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, borderRadius: 16, padding: 16, marginBottom: 20 },
+  exercisesLinkText: { flex: 1, fontSize: 16, fontWeight: '600', color: '#FFF', marginLeft: 12 },
+  
+  // Exercises Screen
+  exerciseIntro: { fontSize: 14, color: colors.textSecondary, marginBottom: 16, lineHeight: 20 },
+  exerciseCard: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12 },
+  exerciseIconContainer: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center' },
+  exerciseInfo: { flex: 1, marginLeft: 16 },
+  exerciseName: { fontSize: 16, fontWeight: '600', color: colors.text },
+  exerciseGoal: { fontSize: 12, color: colors.primary, marginTop: 4 },
+  exerciseDetails: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  exerciseDetail: { flexDirection: 'row', alignItems: 'center', marginRight: 16, marginTop: 4 },
+  exerciseDetailText: { fontSize: 12, color: colors.textSecondary, marginLeft: 4 },
 
   // Goal Type Selection
   goalTypeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.surface },
