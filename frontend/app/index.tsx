@@ -1677,22 +1677,24 @@ export default function NutriScanApp() {
               {user.subscription_type === 'premium' && <Ionicons name="star" size={16} color={colors.premium} />}
             </View>
             {user.subscription_type === 'premium' ? (
-              <TouchableOpacity style={styles.menuButton} onPress={generateMenu} disabled={menuLoading}>
-                {menuLoading ? (
-                  <ActivityIndicator color="#FFF" />
-                ) : (
-                  <>
-                    <Ionicons name="restaurant" size={20} color="#FFF" />
-                    <Text style={styles.menuButtonText}>Générer mon menu IA</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-              
-              {/* Coach IA Button */}
-              <TouchableOpacity style={styles.coachButton} onPress={() => setCurrentScreen('coach')}>
-                <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
-                <Text style={styles.coachButtonText}>Coach Nutrition IA</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={styles.menuButton} onPress={generateMenu} disabled={menuLoading}>
+                  {menuLoading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="restaurant" size={20} color="#FFF" />
+                      <Text style={styles.menuButtonText}>Générer mon menu IA</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+                
+                {/* Coach IA Button */}
+                <TouchableOpacity style={styles.coachButton} onPress={() => setCurrentScreen('coach')}>
+                  <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
+                  <Text style={styles.coachButtonText}>Coach Nutrition IA</Text>
+                </TouchableOpacity>
+              </>
             ) : (
               <View style={styles.premiumFeatureLocked}>
                 <Ionicons name="lock-closed" size={20} color={colors.textSecondary} />
