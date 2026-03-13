@@ -178,4 +178,28 @@ export const fetchFridgeScoreAPI = async (email?: string, userId?: string): Prom
   return response.data;
 };
 
+// User Dietary Preferences
+export const getUserPreferencesAPI = async (email: string): Promise<any> => {
+  const response = await api.get(`/user-preferences/${encodeURIComponent(email)}`);
+  return response.data;
+};
+
+export const saveUserPreferencesAPI = async (email: string, preferences: any): Promise<any> => {
+  const response = await api.post('/user-preferences', { email, preferences });
+  return response.data;
+};
+
+// Offline Cache
+export const getOfflineCacheAPI = async (limit: number = 200): Promise<any> => {
+  const response = await api.get(`/offline-cache?limit=${limit}`);
+  return response.data;
+};
+
+// Product with dietary conflict check
+export const getProductWithPreferencesAPI = async (barcode: string, email?: string): Promise<any> => {
+  const params = email ? `?email=${encodeURIComponent(email)}` : '';
+  const response = await api.get(`/product-with-preferences/${barcode}${params}`);
+  return response.data;
+};
+
 export default api;

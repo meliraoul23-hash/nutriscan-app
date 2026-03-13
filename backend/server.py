@@ -800,6 +800,214 @@ async def get_fridge_score(request: Request):
     )
 
 
+# ============== USER DIETARY PREFERENCES ==============
+class DietaryPreferences(BaseModel):
+    gluten_free: bool = False
+    vegan: bool = False
+    vegetarian: bool = False
+    low_salt: bool = False
+    low_sugar: bool = False
+    lactose_free: bool = False
+    nut_free: bool = False
+    halal: bool = False
+    kosher: bool = False
+    offline_mode_enabled: bool = False
+    advanced_reports_enabled: bool = False
+
+class UserPreferencesUpdate(BaseModel):
+    email: str
+    preferences: DietaryPreferences
+
+class UserPreferencesResponse(BaseModel):
+    email: str
+    preferences: DietaryPreferences
+    updated_at: str
+
+@api_router.get("/user-preferences/{email}")
+async def get_user_preferences(email: str):
+    """Get user dietary preferences"""
+    try:
+        user_prefs = await db.user_preferences.find_one({"email": email})
+        if user_prefs:
+            return UserPreferencesResponse(
+                email=email,
+                preferences=DietaryPreferences(**user_prefs.get("preferences", {})),
+                updated_at=str(user_prefs.get("updated_at", datetime.now(timezone.utc)))
+            )
+        # Return default preferences if none exist
+        return UserPreferencesResponse(
+            email=email,
+            preferences=DietaryPreferences(),
+            updated_at=str(datetime.now(timezone.utc))
+        )
+    except Exception as e:
+        logger.error(f"Error getting preferences: {e}")
+        return UserPreferencesResponse(
+            email=email,
+            preferences=DietaryPreferences(),
+            updated_at=str(datetime.now(timezone.utc))
+        )
+
+@api_router.post("/user-preferences")
+async def save_user_preferences(data: UserPreferencesUpdate):
+    """Save user dietary preferences"""
+    try:
+        prefs_dict = {
+            "email": data.email,
+            "preferences": data.preferences.model_dump(),
+            "updated_at": datetime.now(timezone.utc)
+        }
+        await db.user_preferences.update_one(
+            {"email": data.email},
+            {"$set": prefs_dict},
+            upsert=True
+        )
+        return {"success": True, "message": "Préférences sauvegardées"}
+    except Exception as e:
+        logger.error(f"Error saving preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============== OFFLINE MODE - POPULAR PRODUCTS CACHE ==============
+@api_router.get("/offline-cache")
+async def get_offline_cache(limit: int = 200):
+    """Get popular products for offline cache"""
+    try:
+        # Get most scanned products from history
+        pipeline = [
+            {"$group": {"_id": "$barcode", "count": {"$sum": 1}, "product_name": {"$first": "$product_name"}, "health_score": {"$first": "$health_score"}, "nutri_score": {"$first": "$nutri_score"}, "image_url": {"$first": "$image_url"}}},
+            {"$sort": {"count": -1}},
+            {"$limit": limit}
+        ]
+        popular = await db.scan_history.aggregate(pipeline).to_list(limit)
+        
+        # Get full product data for each
+        cached_products = []
+        for item in popular:
+            if item.get("_id"):
+                cached_products.append({
+                    "barcode": item["_id"],
+                    "product_name": item.get("product_name", ""),
+                    "health_score": item.get("health_score", 50),
+                    "nutri_score": item.get("nutri_score", "C"),
+                    "image_url": item.get("image_url", ""),
+                    "scan_count": item.get("count", 1)
+                })
+        
+        return {
+            "products": cached_products,
+            "count": len(cached_products),
+            "timestamp": str(datetime.now(timezone.utc))
+        }
+    except Exception as e:
+        logger.error(f"Error getting offline cache: {e}")
+        return {"products": [], "count": 0, "timestamp": str(datetime.now(timezone.utc))}
+
+# ============== CHECK DIETARY CONFLICTS ==============
+def check_dietary_conflicts(product_data: dict, preferences: dict) -> List[Dict[str, str]]:
+    """Check if product conflicts with user's dietary restrictions"""
+    conflicts = []
+    
+    ingredients_text = (product_data.get("ingredients_text", "") or "").lower()
+    labels = [l.lower() for l in (product_data.get("labels_tags", []) or [])]
+    allergens = [a.lower() for a in (product_data.get("allergens_tags", []) or [])]
+    
+    # Gluten check
+    if preferences.get("gluten_free"):
+        gluten_indicators = ["gluten", "wheat", "barley", "rye", "oat", "blé", "orge", "seigle", "avoine"]
+        if any(g in ingredients_text for g in gluten_indicators) or "en:gluten" in allergens:
+            if "en:gluten-free" not in labels and "sans-gluten" not in labels:
+                conflicts.append({"type": "gluten", "message": "Contient du gluten", "severity": "high"})
+    
+    # Vegan check
+    if preferences.get("vegan"):
+        non_vegan = ["milk", "egg", "honey", "gelatin", "lait", "oeuf", "miel", "gélatine", "beurre", "crème", "fromage", "viande", "poisson", "poulet"]
+        if any(nv in ingredients_text for nv in non_vegan):
+            if "en:vegan" not in labels:
+                conflicts.append({"type": "vegan", "message": "Non végan", "severity": "high"})
+    
+    # Vegetarian check
+    if preferences.get("vegetarian"):
+        non_veg = ["meat", "fish", "gelatin", "viande", "poisson", "gélatine", "poulet", "boeuf", "porc"]
+        if any(nv in ingredients_text for nv in non_veg):
+            if "en:vegetarian" not in labels:
+                conflicts.append({"type": "vegetarian", "message": "Non végétarien", "severity": "high"})
+    
+    # Low salt check
+    if preferences.get("low_salt"):
+        salt_100g = product_data.get("nutriments", {}).get("salt_100g", 0) or 0
+        if salt_100g > 1.5:  # High salt threshold
+            conflicts.append({"type": "salt", "message": f"Riche en sel ({salt_100g:.1f}g/100g)", "severity": "medium"})
+    
+    # Low sugar check
+    if preferences.get("low_sugar"):
+        sugars_100g = product_data.get("nutriments", {}).get("sugars_100g", 0) or 0
+        if sugars_100g > 12.5:  # High sugar threshold
+            conflicts.append({"type": "sugar", "message": f"Riche en sucre ({sugars_100g:.1f}g/100g)", "severity": "medium"})
+    
+    # Lactose free check
+    if preferences.get("lactose_free"):
+        lactose_indicators = ["milk", "lactose", "lait", "crème", "fromage", "beurre", "yaourt"]
+        if any(l in ingredients_text for l in lactose_indicators) or "en:milk" in allergens:
+            if "en:lactose-free" not in labels and "sans-lactose" not in labels:
+                conflicts.append({"type": "lactose", "message": "Contient du lactose", "severity": "high"})
+    
+    # Nut free check
+    if preferences.get("nut_free"):
+        if "en:nuts" in allergens or any(n in ingredients_text for n in ["nut", "almond", "hazelnut", "noix", "amande", "noisette", "cacahuète", "arachide"]):
+            conflicts.append({"type": "nuts", "message": "Contient des fruits à coque", "severity": "high"})
+    
+    return conflicts
+
+@api_router.get("/product-with-preferences/{barcode}")
+async def get_product_with_dietary_check(barcode: str, email: Optional[str] = None):
+    """Get product with dietary conflict checks"""
+    try:
+        # Fetch product from Open Food Facts
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json")
+            data = response.json()
+        
+        if data.get("status") != 1:
+            raise HTTPException(status_code=404, detail="Produit non trouvé")
+        
+        product_data = data.get("product", {})
+        
+        # Get user preferences if email provided
+        conflicts = []
+        if email:
+            user_prefs = await db.user_preferences.find_one({"email": email})
+            if user_prefs:
+                conflicts = check_dietary_conflicts(product_data, user_prefs.get("preferences", {}))
+        
+        # Calculate health score
+        health_score = calculate_health_score(product_data)
+        additives = analyze_additives(product_data)
+        
+        return {
+            "barcode": barcode,
+            "name": product_data.get("product_name", "Produit inconnu"),
+            "brand": product_data.get("brands", ""),
+            "image_url": product_data.get("image_url", ""),
+            "health_score": health_score,
+            "nutri_score": product_data.get("nutriscore_grade", "c").upper(),
+            "nova_group": product_data.get("nova_group"),
+            "additives": additives,
+            "dietary_conflicts": conflicts,
+            "has_conflicts": len(conflicts) > 0,
+            "ingredients_text": product_data.get("ingredients_text", ""),
+            "nutriments": product_data.get("nutriments", {}),
+            "labels": product_data.get("labels_tags", []),
+            "allergens": product_data.get("allergens_tags", [])
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching product with preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
 # ============== SEARCH ROUTES ==============
 @api_router.get("/search")
 async def search_products(q: str, page: int = 1, page_size: int = 15):

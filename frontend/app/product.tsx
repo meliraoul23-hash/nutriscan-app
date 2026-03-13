@@ -11,6 +11,7 @@ import {
   Modal,
   Share,
   Alert,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -234,30 +235,42 @@ export default function ProductScreen() {
               </View>
             </View>
             {alternatives.slice(0, 5).map((alt, index) => (
-              <TouchableOpacity
-                key={index}
-                style={styles.alternativeItem}
-                onPress={() => router.push({ pathname: '/product', params: { barcode: alt.barcode } })}
-              >
-                <View style={styles.alternativeImageContainer}>
-                  {alt.image_url ? (
-                    <Image source={{ uri: alt.image_url }} style={styles.alternativeImage} />
-                  ) : (
-                    <Ionicons name="leaf" size={20} color={colors.primary} />
-                  )}
-                </View>
-                <View style={styles.alternativeInfo}>
-                  <Text style={styles.alternativeName} numberOfLines={1}>{alt.name}</Text>
-                  <Text style={styles.alternativeBrand}>{alt.brand || ''}</Text>
-                  <View style={styles.scoreGain}>
-                    <Ionicons name="arrow-up" size={12} color={colors.success} />
-                    <Text style={styles.scoreGainText}>+{alt.score_gain || (alt.health_score - product.health_score)} pts</Text>
+              <View key={index} style={styles.alternativeItem}>
+                <TouchableOpacity
+                  style={styles.alternativeContent}
+                  onPress={() => router.push({ pathname: '/product', params: { barcode: alt.barcode } })}
+                >
+                  <View style={styles.alternativeImageContainer}>
+                    {alt.image_url ? (
+                      <Image source={{ uri: alt.image_url }} style={styles.alternativeImage} />
+                    ) : (
+                      <Ionicons name="leaf" size={20} color={colors.primary} />
+                    )}
                   </View>
-                </View>
-                <View style={[styles.alternativeScore, { backgroundColor: getScoreColor(alt.health_score) }]}>
-                  <Text style={styles.alternativeScoreText}>{alt.health_score}</Text>
-                </View>
-              </TouchableOpacity>
+                  <View style={styles.alternativeInfo}>
+                    <Text style={styles.alternativeName} numberOfLines={1}>{alt.name}</Text>
+                    <Text style={styles.alternativeBrand}>{alt.brand || ''}</Text>
+                    <View style={styles.scoreGain}>
+                      <Ionicons name="arrow-up" size={12} color={colors.success} />
+                      <Text style={styles.scoreGainText}>+{alt.score_gain || Math.max(0, (alt.health_score || 0) - (product?.health_score || 0))} pts</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.alternativeScore, { backgroundColor: getScoreColor(alt.health_score) }]}>
+                    <Text style={styles.alternativeScoreText}>{alt.health_score}</Text>
+                  </View>
+                </TouchableOpacity>
+                {/* Buy Now Button */}
+                <TouchableOpacity
+                  style={styles.buyButton}
+                  onPress={() => {
+                    const searchQuery = encodeURIComponent(`${alt.name} ${alt.brand || ''}`);
+                    Linking.openURL(`https://www.google.com/search?q=${searchQuery}+acheter`);
+                  }}
+                >
+                  <Ionicons name="cart" size={14} color="#FFF" />
+                  <Text style={styles.buyButtonText}>Acheter</Text>
+                </TouchableOpacity>
+              </View>
             ))}
           </View>
         )}
@@ -368,7 +381,8 @@ const styles = StyleSheet.create({
   alternativesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   alternativesBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.success, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   alternativesBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '600', marginLeft: 4 },
-  alternativeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  alternativeItem: { flexDirection: 'column', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  alternativeContent: { flexDirection: 'row', alignItems: 'center' },
   alternativeImageContainer: { width: 44, height: 44, borderRadius: 8, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   alternativeImage: { width: 44, height: 44, resizeMode: 'contain' },
   alternativeInfo: { flex: 1, marginLeft: 12 },
@@ -378,6 +392,8 @@ const styles = StyleSheet.create({
   alternativeScoreText: { color: '#FFF', fontWeight: '600', fontSize: 12 },
   scoreGain: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   scoreGainText: { fontSize: 11, fontWeight: '600', color: colors.success, marginLeft: 2 },
+  buyButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF9800', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, alignSelf: 'flex-end', marginTop: 10 },
+  buyButtonText: { color: '#FFF', fontSize: 13, fontWeight: '600', marginLeft: 6 },
   goodChoiceCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 20, alignItems: 'center', marginHorizontal: 16, marginTop: 16 },
   goodChoiceTitle: { fontSize: 16, fontWeight: '700', color: colors.success, marginTop: 8 },
   goodChoiceText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 4 },

@@ -84,14 +84,13 @@ export default function ProfileScreen() {
             <Text style={styles.quickActionText}>Favoris</Text>
             <Text style={styles.quickActionCount}>{favorites.length}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionButton} onPress={() => router.push('/goals')}>
-            <Ionicons name="flag" size={24} color={colors.primary} />
-            <Text style={styles.quickActionText}>Objectifs</Text>
-            <Text style={styles.quickActionCount}>{healthGoals.length}</Text>
+          <TouchableOpacity style={styles.quickActionButton} onPress={() => router.push('/preferences')}>
+            <Ionicons name="settings" size={24} color={colors.primary} />
+            <Text style={styles.quickActionText}>Préférences</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionButton} onPress={() => router.push('/exercises')}>
-            <Ionicons name="fitness" size={24} color={colors.warning} />
-            <Text style={styles.quickActionText}>Exercices</Text>
+          <TouchableOpacity style={styles.quickActionButton} onPress={() => router.push('/fridge-score')}>
+            <Text style={{ fontSize: 22 }}>🧊</Text>
+            <Text style={styles.quickActionText}>Mon Frigo</Text>
           </TouchableOpacity>
         </View>
 
