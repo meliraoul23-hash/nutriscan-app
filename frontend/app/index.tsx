@@ -672,9 +672,14 @@ export default function NutriScanApp() {
     handlePaymentReturn();
   }, []);
 
+  // Load user data when user changes (favoris, objectifs, exercices)
   useEffect(() => {
     if (user) {
+      console.log('User logged in, loading user data...');
       fetchRecommendations();
+      fetchFavorites();
+      fetchHealthGoals();
+      fetchExercises();
     }
   }, [user]);
 

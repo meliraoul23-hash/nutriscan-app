@@ -1008,26 +1008,28 @@ RÈGLES:
         # Use Emergent LLM
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
-            model="gemini-2.0-flash"
-        )
+            session_id=f"coach_{user.email}_{datetime.now().strftime('%Y%m%d%H%M')}",
+            system_message=system_prompt
+        ).with_model("openai", "gpt-4o-mini")
         
-        response = await chat.send_async(
-            system_prompt,
-            [UserMessage(text=body.message)]
-        )
+        message = UserMessage(text=body.message)
+        response = await chat.send_message(message)
+        
+        # Response is a string directly
+        response_text = response if isinstance(response, str) else str(response)
         
         # Save conversation to DB
         conversation = {
             "id": str(uuid.uuid4()),
             "user_id": user.email,
             "user_message": body.message,
-            "coach_response": response.text,
+            "coach_response": response_text,
             "timestamp": datetime.now(timezone.utc)
         }
         await db.coach_conversations.insert_one(conversation)
         
         return {
-            "response": response.text,
+            "response": response_text,
             "conversation_id": conversation["id"]
         }
         
