@@ -1,6 +1,7 @@
 // Firebase Configuration for NutriScan
 import { initializeApp } from 'firebase/app';
 import { 
+  initializeAuth,
   getAuth, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword,
@@ -11,8 +12,11 @@ import {
   signInWithCredential,
   updateProfile,
   sendPasswordResetEmail,
+  getReactNativePersistence,
   User
 } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -28,8 +32,17 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth - use getAuth which works on all platforms
-const auth = getAuth(app);
+// Initialize Auth with proper persistence for React Native
+let auth;
+if (Platform.OS === 'web') {
+  // For web, use default auth
+  auth = getAuth(app);
+} else {
+  // For mobile (iOS/Android), use AsyncStorage for persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(AsyncStorage)
+  });
+}
 
 const googleProvider = new GoogleAuthProvider();
 

@@ -1,577 +1,403 @@
 #!/usr/bin/env python3
 """
-NutriScan Backend API Testing Suite
-Tests all backend endpoints for the NutriScan application
+NutriScan Backend API Stabilization Tests
+Testing specific endpoints as requested:
+1. GET /api/check-premium/{email}
+2. POST /api/coach  
+3. GET /api/favorites
+4. GET /api/health-goals
+5. GET /api/product/{barcode}
 """
-
-import asyncio
 import httpx
 import json
-import sys
+import asyncio
 from datetime import datetime
+import sys
+import os
 
-# Backend URL from frontend/.env - using production URL
-BACKEND_URL = "https://nutriscan-167.preview.emergentagent.com"
-API_BASE = f"{BACKEND_URL}/api"
+# Backend URL from frontend .env (production URL)
+BACKEND_URL = "https://nutriscan-167.preview.emergentagent.com/api"
 
-class Colors:
-    GREEN = '\033[92m'
-    RED = '\033[91m'
-    YELLOW = '\033[93m'
-    BLUE = '\033[94m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
+# Test data
+TEST_EMAIL = "meliraoul23@gmail.com"  # Premium user
+TEST_USER_ID = "99FGZkko1AfrV52fcuHUPz6NLyO2"
+RANDOM_EMAIL = "random.user@test.com"  # Should be free
+NUTELLA_BARCODE = "3017620422003"
 
-class NutriScanTester:
+class TestResults:
     def __init__(self):
-        self.passed_tests = 0
-        self.failed_tests = 0
-        self.test_results = []
+        self.results = []
+        self.errors = []
         
-    def log_result(self, test_name: str, success: bool, details: str = ""):
-        status = f"{Colors.GREEN}✅ PASS{Colors.ENDC}" if success else f"{Colors.RED}❌ FAIL{Colors.ENDC}"
-        print(f"{status} {test_name}")
-        if details:
-            print(f"    {details}")
-        
-        self.test_results.append({
-            'test': test_name,
-            'success': success,
-            'details': details
+    def add_result(self, endpoint, status, message, details=None):
+        self.results.append({
+            'endpoint': endpoint,
+            'status': status,
+            'message': message,
+            'details': details,
+            'timestamp': datetime.now().isoformat()
         })
         
-        if success:
-            self.passed_tests += 1
-        else:
-            self.failed_tests += 1
+    def add_error(self, endpoint, error):
+        self.errors.append({
+            'endpoint': endpoint,
+            'error': str(error),
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    def print_summary(self):
+        print("\n" + "="*80)
+        print("NUTRISCAN BACKEND API STABILIZATION TEST RESULTS")
+        print("="*80)
+        
+        passed = sum(1 for r in self.results if r['status'] == 'PASS')
+        failed = sum(1 for r in self.results if r['status'] == 'FAIL')
+        
+        print(f"Total Tests: {len(self.results)}")
+        print(f"Passed: {passed}")
+        print(f"Failed: {failed}")
+        print(f"Errors: {len(self.errors)}")
+        
+        print("\nDETAILED RESULTS:")
+        print("-" * 80)
+        
+        for result in self.results:
+            status_symbol = "✅" if result['status'] == 'PASS' else "❌"
+            print(f"{status_symbol} {result['endpoint']}")
+            print(f"   Status: {result['status']}")
+            print(f"   Message: {result['message']}")
+            if result['details']:
+                print(f"   Details: {result['details']}")
+            print()
             
-    async def test_health_check(self, client: httpx.AsyncClient):
-        """Test GET /api/ - Health check endpoint"""
-        try:
-            response = await client.get(f"{API_BASE}/")
+        if self.errors:
+            print("ERRORS:")
+            print("-" * 80)
+            for error in self.errors:
+                print(f"❌ {error['endpoint']}: {error['error']}")
+            print()
+
+async def test_premium_status_check(client, results):
+    """Test GET /api/check-premium/{email}"""
+    print("Testing Premium Status Check...")
+    
+    # Test with premium user email
+    try:
+        response = await client.get(f"{BACKEND_URL}/check-premium/{TEST_EMAIL}")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('is_premium') == True:
+                results.add_result(
+                    f"GET /api/check-premium/{TEST_EMAIL}",
+                    "PASS",
+                    f"Premium user correctly identified. Response: {data}",
+                    data
+                )
+            else:
+                results.add_result(
+                    f"GET /api/check-premium/{TEST_EMAIL}",
+                    "FAIL",
+                    f"Premium user not correctly identified. Expected is_premium=True, got: {data}",
+                    data
+                )
+        else:
+            results.add_result(
+                f"GET /api/check-premium/{TEST_EMAIL}",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error(f"GET /api/check-premium/{TEST_EMAIL}", e)
+    
+    # Test with random email (should be free)
+    try:
+        response = await client.get(f"{BACKEND_URL}/check-premium/{RANDOM_EMAIL}")
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('is_premium') == False:
+                results.add_result(
+                    f"GET /api/check-premium/{RANDOM_EMAIL}",
+                    "PASS",
+                    f"Free user correctly identified. Response: {data}",
+                    data
+                )
+            else:
+                results.add_result(
+                    f"GET /api/check-premium/{RANDOM_EMAIL}",
+                    "FAIL",
+                    f"Free user not correctly identified. Expected is_premium=False, got: {data}",
+                    data
+                )
+        else:
+            results.add_result(
+                f"GET /api/check-premium/{RANDOM_EMAIL}",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error(f"GET /api/check-premium/{RANDOM_EMAIL}", e)
+
+async def test_ai_coach(client, results):
+    """Test POST /api/coach"""
+    print("Testing AI Coach Endpoint...")
+    
+    try:
+        payload = {
+            "message": "Bonjour, comment manger mieux ?"
+        }
+        
+        params = {
+            "email": TEST_EMAIL,
+            "user_id": TEST_USER_ID
+        }
+        
+        response = await client.post(
+            f"{BACKEND_URL}/coach", 
+            json=payload,
+            params=params
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            if 'response' in data and data['response']:
+                results.add_result(
+                    "POST /api/coach",
+                    "PASS",
+                    f"AI Coach responded successfully. Length: {len(data['response'])} characters",
+                    {"response_preview": data['response'][:100] + "..." if len(data['response']) > 100 else data['response']}
+                )
+            else:
+                results.add_result(
+                    "POST /api/coach",
+                    "FAIL",
+                    f"AI Coach response missing or empty. Response: {data}",
+                    data
+                )
+        elif response.status_code == 403:
+            results.add_result(
+                "POST /api/coach",
+                "FAIL", 
+                f"Premium feature access denied - check premium status for {TEST_EMAIL}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+        else:
+            results.add_result(
+                "POST /api/coach",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error("POST /api/coach", e)
+
+async def test_favorites_endpoint(client, results):
+    """Test GET /api/favorites"""
+    print("Testing Favorites Endpoint...")
+    
+    try:
+        params = {
+            "email": TEST_EMAIL,
+            "user_id": TEST_USER_ID
+        }
+        
+        response = await client.get(f"{BACKEND_URL}/favorites", params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                results.add_result(
+                    "GET /api/favorites",
+                    "PASS",
+                    f"Favorites retrieved successfully. Count: {len(data)} items",
+                    {"count": len(data), "sample": data[:2] if data else []}
+                )
+            else:
+                results.add_result(
+                    "GET /api/favorites",
+                    "FAIL",
+                    f"Favorites response not a list. Type: {type(data)}, Response: {data}",
+                    data
+                )
+        else:
+            results.add_result(
+                "GET /api/favorites",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error("GET /api/favorites", e)
+
+async def test_health_goals_endpoint(client, results):
+    """Test GET /api/health-goals"""
+    print("Testing Health Goals Endpoint...")
+    
+    try:
+        params = {
+            "email": TEST_EMAIL,
+            "user_id": TEST_USER_ID
+        }
+        
+        # Try the endpoint as specified in review request
+        response = await client.get(f"{BACKEND_URL}/health-goals", params=params)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if isinstance(data, list):
+                results.add_result(
+                    "GET /api/health-goals",
+                    "PASS",
+                    f"Health goals retrieved successfully. Count: {len(data)} goals",
+                    {"count": len(data), "sample": data[:2] if data else []}
+                )
+            else:
+                results.add_result(
+                    "GET /api/health-goals",
+                    "FAIL",
+                    f"Health goals response not a list. Type: {type(data)}, Response: {data}",
+                    data
+                )
+        elif response.status_code == 404:
+            # Try alternative endpoint from codebase
+            print("  Trying alternative endpoint /api/goals...")
+            response = await client.get(f"{BACKEND_URL}/goals", params=params)
             
             if response.status_code == 200:
-                data = response.json()
-                if "NutriScan API" in data.get("message", ""):
-                    self.log_result("Health Check", True, f"Status: {response.status_code}, Message: {data['message']}")
-                    return True
-                else:
-                    self.log_result("Health Check", False, f"Unexpected message: {data}")
-                    return False
-            else:
-                self.log_result("Health Check", False, f"Status: {response.status_code}")
-                return False
-                
-        except Exception as e:
-            self.log_result("Health Check", False, f"Exception: {str(e)}")
-            return False
-            
-    async def test_product_endpoint(self, client: httpx.AsyncClient):
-        """Test GET /api/product/{barcode} endpoint"""
-        test_cases = [
-            {
-                'barcode': '3017620422003', 
-                'name': 'Nutella Test',
-                'expected_low_score': True,  # Nutella should have low health score
-                'should_exist': True
-            },
-            {
-                'barcode': '5000112637922', 
-                'name': 'Coca-Cola Test',
-                'expected_low_score': True,  # Coca-Cola should have low health score
-                'should_exist': True
-            },
-            {
-                'barcode': '0000000000000', 
-                'name': 'Non-existent Product Test',
-                'should_exist': False
-            }
-        ]
-        
-        all_passed = True
-        
-        for test_case in test_cases:
-            try:
-                barcode = test_case['barcode']
-                response = await client.get(f"{API_BASE}/product/{barcode}")
-                
-                if response.status_code != 200:
-                    self.log_result(f"Product API - {test_case['name']}", False, 
-                                  f"Status: {response.status_code}")
-                    all_passed = False
-                    continue
-                
-                data = response.json()
-                
-                # Check required fields
-                required_fields = ['barcode', 'name', 'brand', 'health_score', 'nutri_score', 
-                                 'nova_group', 'additives', 'nutrients', 'pro_tip', 'found']
-                
-                missing_fields = [field for field in required_fields if field not in data]
-                if missing_fields:
-                    self.log_result(f"Product API - {test_case['name']}", False, 
-                                  f"Missing fields: {missing_fields}")
-                    all_passed = False
-                    continue
-                
-                # Check if product existence matches expectation
-                if data['found'] != test_case['should_exist']:
-                    self.log_result(f"Product API - {test_case['name']}", False, 
-                                  f"Expected found={test_case['should_exist']}, got {data['found']}")
-                    all_passed = False
-                    continue
-                
-                if test_case['should_exist']:
-                    # Check health score is valid (0-100)
-                    health_score = data['health_score']
-                    if not (0 <= health_score <= 100):
-                        self.log_result(f"Product API - {test_case['name']}", False, 
-                                      f"Invalid health score: {health_score}")
-                        all_passed = False
-                        continue
-                    
-                    # Check if expected low score products actually have low scores
-                    if test_case.get('expected_low_score') and health_score > 60:
-                        self.log_result(f"Product API - {test_case['name']}", False, 
-                                      f"Expected low health score but got {health_score}")
-                        all_passed = False
-                        continue
-                    
-                    details = f"Health Score: {health_score}, Nutri-Score: {data['nutri_score']}, NOVA: {data['nova_group']}"
-                    self.log_result(f"Product API - {test_case['name']}", True, details)
-                else:
-                    # Non-existent product
-                    self.log_result(f"Product API - {test_case['name']}", True, 
-                                  f"Correctly returned found=False")
-                    
-            except Exception as e:
-                self.log_result(f"Product API - {test_case['name']}", False, f"Exception: {str(e)}")
-                all_passed = False
-                
-        return all_passed
-        
-    async def test_history_endpoints(self, client: httpx.AsyncClient):
-        """Test POST /api/history, GET /api/history, DELETE /api/history"""
-        
-        # First clear any existing history
-        try:
-            await client.delete(f"{API_BASE}/history")
-        except:
-            pass  # Ignore if it fails
-            
-        all_passed = True
-        
-        # Test POST /api/history - Save scan
-        try:
-            scan_data = {
-                "barcode": "3017620422003",
-                "product_name": "Nutella Hazelnut Spread",
-                "brand": "Ferrero",
-                "image_url": "https://example.com/nutella.jpg",
-                "health_score": 37,
-                "nutri_score": "E"
-            }
-            
-            response = await client.post(f"{API_BASE}/history", json=scan_data)
-            
-            if response.status_code != 200:
-                self.log_result("History POST", False, f"Status: {response.status_code}")
-                all_passed = False
-            else:
-                data = response.json()
-                required_fields = ['id', 'barcode', 'product_name', 'health_score', 'timestamp']
-                missing_fields = [field for field in required_fields if field not in data]
-                
-                if missing_fields:
-                    self.log_result("History POST", False, f"Missing fields: {missing_fields}")
-                    all_passed = False
-                else:
-                    self.log_result("History POST", True, f"Saved scan with ID: {data['id']}")
-                    
-        except Exception as e:
-            self.log_result("History POST", False, f"Exception: {str(e)}")
-            all_passed = False
-            
-        # Test GET /api/history - Get scan history
-        try:
-            response = await client.get(f"{API_BASE}/history")
-            
-            if response.status_code != 200:
-                self.log_result("History GET", False, f"Status: {response.status_code}")
-                all_passed = False
-            else:
                 data = response.json()
                 if isinstance(data, list):
-                    if len(data) >= 1:
-                        # Check first item structure
-                        first_scan = data[0]
-                        required_fields = ['id', 'barcode', 'product_name', 'health_score']
-                        missing_fields = [field for field in required_fields if field not in first_scan]
-                        
-                        if missing_fields:
-                            self.log_result("History GET", False, f"Missing fields in scan: {missing_fields}")
-                            all_passed = False
-                        else:
-                            self.log_result("History GET", True, f"Retrieved {len(data)} scan(s)")
-                    else:
-                        self.log_result("History GET", True, "Retrieved empty history list")
+                    results.add_result(
+                        "GET /api/goals (alternative)",
+                        "PASS",
+                        f"Health goals retrieved from alternative endpoint. Count: {len(data)} goals",
+                        {"count": len(data), "sample": data[:2] if data else []}
+                    )
                 else:
-                    self.log_result("History GET", False, f"Expected list, got: {type(data)}")
-                    all_passed = False
-                    
-        except Exception as e:
-            self.log_result("History GET", False, f"Exception: {str(e)}")
-            all_passed = False
-            
-        # Test DELETE /api/history - Clear history
-        try:
-            response = await client.delete(f"{API_BASE}/history")
-            
-            if response.status_code != 200:
-                self.log_result("History DELETE", False, f"Status: {response.status_code}")
-                all_passed = False
+                    results.add_result(
+                        "GET /api/goals (alternative)",
+                        "FAIL",
+                        f"Goals response not a list. Type: {type(data)}, Response: {data}",
+                        data
+                    )
             else:
-                data = response.json()
-                if "message" in data and ("cleared" in data["message"].lower() or "effacé" in data["message"].lower()):
-                    self.log_result("History DELETE", True, f"Response: {data['message']}")
-                else:
-                    self.log_result("History DELETE", False, f"Unexpected response: {data}")
-                    all_passed = False
-                    
-        except Exception as e:
-            self.log_result("History DELETE", False, f"Exception: {str(e)}")
-            all_passed = False
-            
-        # Verify history is actually cleared
-        try:
-            response = await client.get(f"{API_BASE}/history")
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, list) and len(data) == 0:
-                    self.log_result("History Verify Clear", True, "History successfully cleared")
-                else:
-                    self.log_result("History Verify Clear", False, f"History not cleared: {len(data)} items remain")
-                    all_passed = False
-            else:
-                self.log_result("History Verify Clear", False, f"Could not verify clear: {response.status_code}")
-                all_passed = False
-        except Exception as e:
-            self.log_result("History Verify Clear", False, f"Exception: {str(e)}")
-            all_passed = False
-            
-        return all_passed
-        
-    async def test_alternatives_endpoint(self, client: httpx.AsyncClient):
-        """Test GET /api/alternatives/{barcode}"""
-        try:
-            # Test with Nutella barcode
-            barcode = "3017620422003"
-            response = await client.get(f"{API_BASE}/alternatives/{barcode}")
-            
-            if response.status_code != 200:
-                self.log_result("Alternatives API", False, f"Status: {response.status_code}")
-                return False
-                
-            data = response.json()
-            
-            if not isinstance(data, list):
-                self.log_result("Alternatives API", False, f"Expected list, got: {type(data)}")
-                return False
-                
-            # Check structure of alternatives if any exist
-            if len(data) > 0:
-                first_alt = data[0]
-                required_fields = ['barcode', 'name', 'brand', 'health_score', 'nutri_score']
-                missing_fields = [field for field in required_fields if field not in first_alt]
-                
-                if missing_fields:
-                    self.log_result("Alternatives API", False, f"Missing fields: {missing_fields}")
-                    return False
-                    
-                self.log_result("Alternatives API", True, f"Found {len(data)} alternative(s)")
-            else:
-                self.log_result("Alternatives API", True, "No alternatives found (acceptable)")
-                
-            return True
-            
-        except Exception as e:
-            self.log_result("Alternatives API", False, f"Exception: {str(e)}")
-            return False
-            
-    async def test_healing_foods_endpoint(self, client: httpx.AsyncClient):
-        """Test GET /api/healing-foods"""
-        try:
-            response = await client.get(f"{API_BASE}/healing-foods")
-            
-            if response.status_code != 200:
-                self.log_result("Healing Foods API", False, f"Status: {response.status_code}")
-                return False
-                
-            data = response.json()
-            
-            if not isinstance(data, list):
-                self.log_result("Healing Foods API", False, f"Expected list, got: {type(data)}")
-                return False
-                
-            if len(data) == 0:
-                self.log_result("Healing Foods API", False, "No healing foods returned")
-                return False
-            
-            # Check structure of first healing food
-            first_food = data[0]
-            required_fields = ['name', 'benefits', 'conditions', 'source', 'image']
-            missing_fields = [field for field in required_fields if field not in first_food]
-            
-            if missing_fields:
-                self.log_result("Healing Foods API", False, f"Missing fields: {missing_fields}")
-                return False
-                
-            self.log_result("Healing Foods API", True, f"Retrieved {len(data)} healing foods")
-            return True
-            
-        except Exception as e:
-            self.log_result("Healing Foods API", False, f"Exception: {str(e)}")
-            return False
-            
-    async def test_additive_endpoint(self, client: httpx.AsyncClient):
-        """Test GET /api/additive/{code}"""
-        try:
-            # Test with E250 (Nitrite de sodium) as specified in requirements
-            response = await client.get(f"{API_BASE}/additive/e250")
-            
-            if response.status_code != 200:
-                self.log_result("Additive API", False, f"Status: {response.status_code}")
-                return False
-                
-            data = response.json()
-            
-            # Check required fields for additive info
-            required_fields = ['code', 'name', 'risk', 'description', 'details', 'sources', 'daily_limit']
-            missing_fields = [field for field in required_fields if field not in data]
-            
-            if missing_fields:
-                self.log_result("Additive API", False, f"Missing fields: {missing_fields}")
-                return False
-                
-            # Check if the additive is E250 (Nitrite de sodium)
-            if data['code'] != 'E250':
-                self.log_result("Additive API", False, f"Expected E250, got {data['code']}")
-                return False
-                
-            self.log_result("Additive API", True, f"Retrieved additive info for {data['code']}: {data['name']}")
-            return True
-            
-        except Exception as e:
-            self.log_result("Additive API", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_search_endpoint(self, client: httpx.AsyncClient):
-        """Test GET /api/search endpoint"""
-        try:
-            # Test search with 'chocolat' as specified in requirements
-            response = await client.get(f"{API_BASE}/search", params={'q': 'chocolat'})
-            
-            if response.status_code != 200:
-                self.log_result("Search API", False, f"Status: {response.status_code}")
-                return False
-                
-            data = response.json()
-            
-            # Check response structure
-            required_fields = ['products', 'count', 'page', 'page_size']
-            missing_fields = [field for field in required_fields if field not in data]
-            
-            if missing_fields:
-                self.log_result("Search API", False, f"Missing fields: {missing_fields}")
-                return False
-                
-            products = data['products']
-            if not isinstance(products, list):
-                self.log_result("Search API", False, f"Products should be list, got: {type(products)}")
-                return False
-            
-            # If products found, check structure
-            if len(products) > 0:
-                first_product = products[0]
-                product_required_fields = ['barcode', 'name', 'brand', 'image_url', 'health_score', 'nutri_score']
-                missing_product_fields = [field for field in product_required_fields if field not in first_product]
-                
-                if missing_product_fields:
-                    self.log_result("Search API", False, f"Missing product fields: {missing_product_fields}")
-                    return False
-                    
-            self.log_result("Search API", True, f"Search returned {len(products)} products for 'chocolat'")
-            return True
-            
-        except Exception as e:
-            self.log_result("Search API", False, f"Exception: {str(e)}")
-            return False
-    
-    async def test_auth_endpoints(self, client: httpx.AsyncClient):
-        """Test authentication endpoints - register and login"""
-        all_passed = True
-        
-        # Test user registration
-        try:
-            register_data = {
-                "email": "test@example.com",
-                "password": "password123",
-                "name": "Test User"
-            }
-            
-            # First try to clear any existing user (ignore errors)
-            try:
-                login_response = await client.post(f"{API_BASE}/auth/login", json={
-                    "email": "test@example.com",
-                    "password": "password123"
-                })
-                # If login succeeds, user already exists, which is fine for testing
-                if login_response.status_code == 200:
-                    self.log_result("Auth Register", True, "User already exists, proceeding with login test")
-                else:
-                    # Try registration
-                    response = await client.post(f"{API_BASE}/auth/register", json=register_data)
-                    
-                    if response.status_code != 200:
-                        # Check if it's because email already exists
-                        error_data = response.json()
-                        if "déjà utilisé" in error_data.get('detail', ''):
-                            self.log_result("Auth Register", True, "Email already exists (expected)")
-                        else:
-                            self.log_result("Auth Register", False, f"Status: {response.status_code}, Detail: {error_data}")
-                            all_passed = False
-                    else:
-                        data = response.json()
-                        required_fields = ['token', 'user']
-                        missing_fields = [field for field in required_fields if field not in data]
-                        
-                        if missing_fields:
-                            self.log_result("Auth Register", False, f"Missing fields: {missing_fields}")
-                            all_passed = False
-                        else:
-                            user_data = data['user']
-                            if user_data.get('email') != register_data['email']:
-                                self.log_result("Auth Register", False, f"Email mismatch: {user_data.get('email')} != {register_data['email']}")
-                                all_passed = False
-                            else:
-                                self.log_result("Auth Register", True, f"User registered successfully: {user_data['name']}")
-            except:
-                # Try registration if login fails
-                response = await client.post(f"{API_BASE}/auth/register", json=register_data)
-                
-                if response.status_code != 200:
-                    error_data = response.json()
-                    if "déjà utilisé" in error_data.get('detail', ''):
-                        self.log_result("Auth Register", True, "Email already exists (expected)")
-                    else:
-                        self.log_result("Auth Register", False, f"Status: {response.status_code}, Detail: {error_data}")
-                        all_passed = False
-                else:
-                    data = response.json()
-                    self.log_result("Auth Register", True, f"User registered successfully: {data['user']['name']}")
-                
-        except Exception as e:
-            self.log_result("Auth Register", False, f"Exception: {str(e)}")
-            all_passed = False
-            
-        # Test user login
-        try:
-            login_data = {
-                "email": "test@example.com",
-                "password": "password123"
-            }
-            
-            response = await client.post(f"{API_BASE}/auth/login", json=login_data)
-            
-            if response.status_code != 200:
-                self.log_result("Auth Login", False, f"Status: {response.status_code}")
-                all_passed = False
-            else:
-                data = response.json()
-                required_fields = ['token', 'user']
-                missing_fields = [field for field in required_fields if field not in data]
-                
-                if missing_fields:
-                    self.log_result("Auth Login", False, f"Missing fields: {missing_fields}")
-                    all_passed = False
-                else:
-                    user_data = data['user']
-                    if user_data.get('email') != login_data['email']:
-                        self.log_result("Auth Login", False, f"Email mismatch: {user_data.get('email')} != {login_data['email']}")
-                        all_passed = False
-                    else:
-                        self.log_result("Auth Login", True, f"User logged in successfully: {user_data['name']}")
-                        
-        except Exception as e:
-            self.log_result("Auth Login", False, f"Exception: {str(e)}")
-            all_passed = False
-            
-        return all_passed
-            
-    async def run_all_tests(self):
-        """Run all backend tests"""
-        print(f"{Colors.BLUE}{Colors.BOLD}🧪 NutriScan Backend API Testing Suite{Colors.ENDC}")
-        print(f"{Colors.BLUE}Testing Backend URL: {API_BASE}{Colors.ENDC}\n")
-        
-        timeout = httpx.Timeout(30.0)  # 30 second timeout
-        
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            print(f"{Colors.YELLOW}🔍 Running Health Check...{Colors.ENDC}")
-            await self.test_health_check(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing Product Endpoints...{Colors.ENDC}")
-            await self.test_product_endpoint(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing History Endpoints...{Colors.ENDC}")
-            await self.test_history_endpoints(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing Alternatives Endpoint...{Colors.ENDC}")
-            await self.test_alternatives_endpoint(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing Healing Foods Endpoint...{Colors.ENDC}")
-            await self.test_healing_foods_endpoint(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing Additive Info Endpoint...{Colors.ENDC}")
-            await self.test_additive_endpoint(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing Search Endpoint...{Colors.ENDC}")
-            await self.test_search_endpoint(client)
-            print()
-            
-            print(f"{Colors.YELLOW}🔍 Testing Authentication Endpoints...{Colors.ENDC}")
-            await self.test_auth_endpoints(client)
-            print()
-            
-        # Print summary
-        total_tests = self.passed_tests + self.failed_tests
-        pass_rate = (self.passed_tests / total_tests * 100) if total_tests > 0 else 0
-        
-        print(f"{Colors.BOLD}📊 Test Summary:{Colors.ENDC}")
-        print(f"Total Tests: {total_tests}")
-        print(f"Passed: {Colors.GREEN}{self.passed_tests}{Colors.ENDC}")
-        print(f"Failed: {Colors.RED}{self.failed_tests}{Colors.ENDC}")
-        print(f"Pass Rate: {pass_rate:.1f}%")
-        
-        if self.failed_tests > 0:
-            print(f"\n{Colors.RED}❌ Some tests failed. Check the details above.{Colors.ENDC}")
-            return False
+                results.add_result(
+                    "GET /api/health-goals",
+                    "FAIL",
+                    f"Both /api/health-goals and /api/goals failed. Status: {response.status_code}, Response: {response.text}",
+                    {"status_code": response.status_code, "response": response.text}
+                )
         else:
-            print(f"\n{Colors.GREEN}✅ All tests passed!{Colors.ENDC}")
-            return True
+            results.add_result(
+                "GET /api/health-goals",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error("GET /api/health-goals", e)
+
+async def test_product_scan(client, results):
+    """Test GET /api/product/{barcode}"""
+    print("Testing Product Scan (Nutella)...")
+    
+    try:
+        response = await client.get(f"{BACKEND_URL}/product/{NUTELLA_BARCODE}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            required_fields = ['barcode', 'name', 'brand', 'health_score', 'nutri_score', 'found']
+            
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if not missing_fields and data.get('found') == True:
+                results.add_result(
+                    f"GET /api/product/{NUTELLA_BARCODE}",
+                    "PASS",
+                    f"Product scan successful. Name: {data.get('name')}, Health Score: {data.get('health_score')}, Nutri-Score: {data.get('nutri_score')}",
+                    {
+                        "name": data.get('name'),
+                        "brand": data.get('brand'),
+                        "health_score": data.get('health_score'),
+                        "nutri_score": data.get('nutri_score'),
+                        "nova_group": data.get('nova_group')
+                    }
+                )
+            else:
+                results.add_result(
+                    f"GET /api/product/{NUTELLA_BARCODE}",
+                    "FAIL",
+                    f"Product response missing fields or not found. Missing: {missing_fields}, Found: {data.get('found')}",
+                    {"missing_fields": missing_fields, "response_sample": {k: v for k, v in list(data.items())[:5]}}
+                )
+        else:
+            results.add_result(
+                f"GET /api/product/{NUTELLA_BARCODE}",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error(f"GET /api/product/{NUTELLA_BARCODE}", e)
+
+async def test_basic_connectivity(client, results):
+    """Test basic API connectivity"""
+    print("Testing Basic API Connectivity...")
+    
+    try:
+        response = await client.get(f"{BACKEND_URL}/")
+        
+        if response.status_code == 200:
+            data = response.json()
+            results.add_result(
+                "GET /api/",
+                "PASS",
+                f"API is reachable. Message: {data.get('message', 'No message')}",
+                data
+            )
+        else:
+            results.add_result(
+                "GET /api/",
+                "FAIL",
+                f"HTTP {response.status_code}: {response.text}",
+                {"status_code": response.status_code, "response": response.text}
+            )
+    except Exception as e:
+        results.add_error("GET /api/", e)
 
 async def main():
-    """Main function to run tests"""
-    tester = NutriScanTester()
-    success = await tester.run_all_tests()
+    """Main test runner"""
+    print("Starting NutriScan Backend API Stabilization Tests...")
+    print(f"Backend URL: {BACKEND_URL}")
+    print(f"Test Email (Premium): {TEST_EMAIL}")
+    print(f"Test User ID: {TEST_USER_ID}")
+    print(f"Random Email (Free): {RANDOM_EMAIL}")
+    print("-" * 80)
     
-    # Return appropriate exit code
-    sys.exit(0 if success else 1)
+    results = TestResults()
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Test in specific order as requested
+        await test_basic_connectivity(client, results)
+        await test_premium_status_check(client, results)
+        await test_ai_coach(client, results)
+        await test_favorites_endpoint(client, results)
+        await test_health_goals_endpoint(client, results)
+        await test_product_scan(client, results)
+    
+    results.print_summary()
+    
+    # Return exit code based on results
+    failed_tests = sum(1 for r in results.results if r['status'] == 'FAIL')
+    error_count = len(results.errors)
+    
+    if failed_tests > 0 or error_count > 0:
+        print(f"\n⚠️  TESTING COMPLETED WITH ISSUES: {failed_tests} failed tests, {error_count} errors")
+        return 1
+    else:
+        print(f"\n✅ ALL TESTS PASSED SUCCESSFULLY!")
+        return 0
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)

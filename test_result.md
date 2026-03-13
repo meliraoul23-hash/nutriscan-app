@@ -432,6 +432,51 @@ backend:
         agent: "testing"
         comment: "✅ PASSED - Subscription status retrieved correctly. Returns subscription type and available features list (8 features for premium users)"
 
+  - task: "GET /api/check-premium/{email} - Check premium status by email"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "STABILIZATION ENDPOINT - Firebase auth integration for premium status checking"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Premium status check working correctly. meliraoul23@gmail.com returns is_premium: true, random email returns is_premium: false"
+
+  - task: "POST /api/coach - AI nutrition coaching (Premium feature)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "STABILIZATION ENDPOINT - AI Coach for personalized nutrition advice using Emergent LLM"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - AI Coach responds successfully with personalized French nutrition advice (1107 characters). Requires premium subscription and Firebase auth"
+
+  - task: "GET /api/health-goals - Get user health goals with Firebase auth"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "STABILIZATION ENDPOINT - Health goals retrieval with Firebase authentication integration"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - Health goals retrieved successfully. Found 2 goals: 'Plus d'énergie' and 'Réduire le stress' for user meliraoul23@gmail.com"
+
 frontend:
   - task: "Home Screen with scan button and history"
     implemented: true
@@ -494,6 +539,8 @@ test_plan:
 agent_communication:
   - agent: "main"
     message: "Built NutriScan MVP with backend API connecting to Open Food Facts and frontend with barcode scanning. Please test all backend endpoints. Test with barcodes: 3017620422003 (Nutella), 5000112637922 (Coca-Cola), 3029330003533 (good product). Focus on product fetch, history, and alternatives endpoints."
+  - agent: "main"
+    message: "STABILIZATION PASS - June 2025: Fixed Firebase Auth persistence for mobile by using initializeAuth with getReactNativePersistence(AsyncStorage). Please test: 1) /api/check-premium/{email} - should return premium status 2) /api/coach endpoint with email=meliraoul23@gmail.com 3) /api/favorites and /api/health-goals endpoints. Focus on verifying that Firebase-authenticated users can access premium features correctly."
   - agent: "testing"
     message: "✅ COMPREHENSIVE BACKEND TESTING COMPLETE - Tested all 14 requested endpoints successfully: 1) Health check (GET /api/) - 200 OK with proper welcome message 2) Product fetch (GET /api/product/{barcode}) - tested Nutella (health score: 34, nutri-score: E, NOVA: 4), Coca-Cola (health score: 53, NOVA: 4), and non-existent product handling (found: false) 3) History management (POST/GET/DELETE /api/history) - saving, retrieving, and clearing work correctly with MongoDB persistence 4) Alternatives endpoint (GET /api/alternatives/{barcode}) - working, returns empty array when no alternatives found 5) Healing foods (GET /api/healing-foods) - returns 12 healing foods with proper structure 6) Additive info (GET /api/additive/e250) - returns detailed info for Nitrite de sodium 7) Search (GET /api/search?q=chocolat) - proper JSON structure returned 8) Authentication (POST /api/auth/register and POST /api/auth/login) - user registration and login working correctly. All endpoints return proper JSON responses with required fields. Health scoring algorithm validated. Duplicate prevention working (5-second window tested). All APIs responding from production URL. Backend is fully functional and ready."
   - agent: "main"
@@ -502,3 +549,5 @@ agent_communication:
     message: "✅ COMPREHENSIVE FRONTEND TESTING COMPLETE ON MOBILE (390x844) - All major features working correctly: 1) Home Screen: NutriScan logo with leaf icon, 'Scanner un produit' button, 'Scans récents' section with history items, and 'Aliments naturels bienfaisants' section with healing food cards all display properly 2) Healing Food Modal: CONFIRMED WORKING - Curcuma modal opens correctly showing title with emoji, Bienfaits section with tags (Anti-inflammatoire, Antioxydant, Digestion), 'Peut aider pour' section with conditions (Arthrite, Inflammation, Troubles digestifs), Source information (OMS, NIH), disclaimer text in French, and working close button 3) Navigation Tabs: All 5 tabs (Accueil, Historique, Recherche, Classement, Profil) are functional and load appropriate content 4) Search Feature: Search input accepts queries like 'chocolat' and processes them correctly 5) Authentication Forms: Both login and registration forms accessible with proper input fields and placeholders visible 6) Product Details: Page structure supports health scores, Nutri-Score/NOVA badges, pro tips, and smooth scrolling. Mobile-first responsive design working perfectly. All UI components render correctly and interact as expected. NO CRITICAL ISSUES FOUND."
   - agent: "testing"
     message: "✅ COMPREHENSIVE V2 BACKEND TESTING COMPLETE - Successfully tested all 12 NEW V2 endpoints: 1) Goals System (5 endpoints): GET /api/goals/types (6 goal types), POST /api/goals (create goal), GET /api/goals (retrieve user goals), DELETE /api/goals/{id} (delete goal), POST /api/goals/check-product/{barcode} (check product against goals) - all working correctly with authentication 2) Product Comparison: POST /api/compare - FIXED ObjectId and nutri_score comparison issues, now successfully compares multiple products (tested Nutella vs Coca-Cola) 3) Favorites System (3 endpoints): POST/GET/DELETE /api/favorites - FIXED MongoDB ObjectId serialization issues by excluding _id fields, all working correctly 4) Premium Subscription (2 endpoints): POST /api/subscribe (upgrade to premium), GET /api/subscription-status (check status and features) - both working correctly. MINOR FIXES APPLIED: Fixed MongoDB ObjectId JSON serialization by adding projection filters and excluded _id from responses. Fixed nutri_score comparison logic to handle first character only. All V2 features fully functional and ready for production use."
+  - agent: "testing"
+    message: "✅ BACKEND API STABILIZATION COMPLETE - Tested all 5 specific stabilization endpoints: 1) GET /api/check-premium/{email}: WORKING - Premium user meliraoul23@gmail.com correctly identified as premium (is_premium: true), random user correctly identified as free (is_premium: false) 2) POST /api/coach: WORKING - AI Coach responds successfully to French queries with personalized nutrition advice (1107 characters response) 3) GET /api/favorites: WORKING - Retrieved 5 favorite products with complete structure (barcode, product_name, health_score, etc.) 4) GET /api/health-goals: WORKING - Retrieved 2 health goals (Plus d'énergie, Réduire le stress) 5) GET /api/product/3017620422003: WORKING - Nutella product data fetched correctly (health_score: 34, nutri_score: E, nova_group: 4). Firebase authentication integration working correctly with premium features. All endpoints responding from production URL https://nutriscan-167.preview.emergentagent.com/api. NO CRITICAL ISSUES FOUND."
