@@ -684,8 +684,33 @@ export default function NutriScanApp() {
       fetchFavorites();
       fetchHealthGoals();
       fetchExercises();
+      // Load saved shopping list and menu
+      loadSavedShoppingList();
     }
   }, [user]);
+
+  // Load shopping list from storage
+  const loadSavedShoppingList = async () => {
+    try {
+      const savedList = await AsyncStorage.getItem('shopping_list');
+      const savedMenu = await AsyncStorage.getItem('weekly_menu');
+      const savedFamilySize = await AsyncStorage.getItem('family_size');
+      
+      if (savedList) {
+        setShoppingList(JSON.parse(savedList));
+        console.log('Shopping list loaded:', JSON.parse(savedList).length, 'items');
+      }
+      if (savedMenu) {
+        setWeeklyMenu(JSON.parse(savedMenu));
+        console.log('Menu loaded from storage');
+      }
+      if (savedFamilySize) {
+        setFamilySize(parseInt(savedFamilySize));
+      }
+    } catch (error) {
+      console.log('Error loading shopping list:', error);
+    }
+  };
 
   // Navigation
   const openScanner = () => {
@@ -931,7 +956,11 @@ export default function NutriScanApp() {
       });
       const response = await axios.post(`${API_URL}/generate-menu?${params.toString()}`, { family_size: size });
       setWeeklyMenu(response.data);
-      // Save shopping list separately
+      
+      // Save menu and shopping list to storage for persistence
+      await AsyncStorage.setItem('weekly_menu', JSON.stringify(response.data));
+      await AsyncStorage.setItem('family_size', size.toString());
+      
       if (response.data.liste_courses) {
         setShoppingList(response.data.liste_courses);
         await AsyncStorage.setItem('shopping_list', JSON.stringify(response.data.liste_courses));
