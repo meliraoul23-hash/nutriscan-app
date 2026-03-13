@@ -911,6 +911,110 @@ export default function NutriScanApp() {
     }
   };
 
+  // Format weekly menu as text
+  const formatMenuAsText = () => {
+    if (!weeklyMenu) return '';
+    
+    const days = ['samedi', 'dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'];
+    let menuText = '🍽️ MENU HEBDOMADAIRE NUTRISCAN\n';
+    menuText += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n';
+    
+    days.forEach(day => {
+      if (weeklyMenu[day]) {
+        menuText += `📅 ${day.toUpperCase()}\n`;
+        menuText += `┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n`;
+        if (weeklyMenu[day].petit_dejeuner) {
+          menuText += `☀️ Petit-déjeuner: ${weeklyMenu[day].petit_dejeuner}\n`;
+        }
+        if (weeklyMenu[day].dejeuner) {
+          menuText += `🍽️ Déjeuner: ${weeklyMenu[day].dejeuner}\n`;
+        }
+        if (weeklyMenu[day].diner) {
+          menuText += `🌙 Dîner: ${weeklyMenu[day].diner}\n`;
+        }
+        if (weeklyMenu[day].collation) {
+          menuText += `☕ Collation: ${weeklyMenu[day].collation}\n`;
+        }
+        menuText += '\n';
+      }
+    });
+    
+    if (weeklyMenu.liste_courses && weeklyMenu.liste_courses.length > 0) {
+      menuText += '🛒 LISTE DE COURSES\n';
+      menuText += '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n';
+      weeklyMenu.liste_courses.forEach((item: string) => {
+        menuText += `☐ ${item}\n`;
+      });
+    }
+    
+    menuText += '\n\n📱 Généré par NutriScan Premium';
+    return menuText;
+  };
+
+  // Copy menu to clipboard
+  const copyMenuToClipboard = async () => {
+    const menuText = formatMenuAsText();
+    if (!menuText) {
+      Alert.alert('Erreur', 'Aucun menu à copier');
+      return;
+    }
+    
+    try {
+      if (Platform.OS === 'web') {
+        await navigator.clipboard.writeText(menuText);
+        Alert.alert('Copié !', 'Le menu a été copié dans le presse-papier');
+      } else {
+        const Clipboard = await import('@react-native-clipboard/clipboard').then(m => m.default).catch(() => null);
+        if (Clipboard) {
+          Clipboard.setString(menuText);
+          Alert.alert('Copié !', 'Le menu a été copié dans le presse-papier');
+        } else {
+          // Fallback: use Share
+          await shareMenu();
+        }
+      }
+    } catch (error) {
+      console.log('Copy error:', error);
+      // Fallback to share
+      await shareMenu();
+    }
+  };
+
+  // Share menu (mobile) or download as text file (web)
+  const shareMenu = async () => {
+    const menuText = formatMenuAsText();
+    if (!menuText) {
+      Alert.alert('Erreur', 'Aucun menu à partager');
+      return;
+    }
+    
+    try {
+      if (Platform.OS === 'web') {
+        // On web, create a downloadable text file
+        const blob = new Blob([menuText], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `menu-nutriscan-${new Date().toISOString().split('T')[0]}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        Alert.alert('Téléchargé !', 'Le menu a été téléchargé');
+      } else {
+        // Mobile: use native share
+        const { Share } = await import('react-native');
+        await Share.share({
+          message: menuText,
+          title: 'Menu Hebdomadaire NutriScan',
+        });
+      }
+    } catch (error) {
+      console.log('Share menu error:', error);
+      Alert.alert('Erreur', 'Impossible de partager le menu');
+    }
+  };
+
   // Upgrade to Premium
   const upgradeToPremium = async () => {
     if (!user) {
@@ -1683,6 +1787,22 @@ export default function NutriScanApp() {
         </View>
       ) : (
         <>
+          {/* Action buttons for copy/share */}
+          <View style={styles.menuActionsContainer}>
+            <TouchableOpacity style={styles.menuActionButton} onPress={copyMenuToClipboard}>
+              <Ionicons name="copy-outline" size={20} color={colors.primary} />
+              <Text style={styles.menuActionText}>Copier</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuActionButton} onPress={shareMenu}>
+              <Ionicons name="share-outline" size={20} color={colors.primary} />
+              <Text style={styles.menuActionText}>Partager</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuActionButton} onPress={shareMenu}>
+              <Ionicons name="download-outline" size={20} color={colors.primary} />
+              <Text style={styles.menuActionText}>Télécharger</Text>
+            </TouchableOpacity>
+          </View>
+
           {['samedi', 'dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi'].map((day) => (
             weeklyMenu[day] && (
               <View key={day} style={styles.menuDayCard}>
@@ -1719,6 +1839,12 @@ export default function NutriScanApp() {
               ))}
             </View>
           )}
+          
+          {/* Regenerate button */}
+          <TouchableOpacity style={styles.regenerateButton} onPress={generateMenu}>
+            <Ionicons name="refresh" size={20} color="#FFF" />
+            <Text style={styles.regenerateButtonText}>Générer un nouveau menu</Text>
+          </TouchableOpacity>
         </>
       )}
     </ScrollView>
@@ -2811,6 +2937,11 @@ const styles = StyleSheet.create({
   comparisonWinner: { fontSize: 14, fontWeight: '600', color: colors.success, maxWidth: '50%', textAlign: 'right' },
 
   // Menu Screen
+  menuActionsContainer: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: colors.surface, borderRadius: 16, padding: 12, marginBottom: 16 },
+  menuActionButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, backgroundColor: '#FFF', borderRadius: 12, borderWidth: 1, borderColor: colors.primary },
+  menuActionText: { fontSize: 14, fontWeight: '600', color: colors.primary, marginLeft: 6 },
+  regenerateButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, borderRadius: 12, padding: 16, marginTop: 24, marginBottom: 20 },
+  regenerateButtonText: { fontSize: 16, fontWeight: '600', color: '#FFF', marginLeft: 8 },
   menuDayCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12 },
   menuDayTitle: { fontSize: 16, fontWeight: '700', color: colors.primary, marginBottom: 12, textTransform: 'capitalize' },
   menuMealRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 8 },
