@@ -31,8 +31,10 @@ import {
   firebaseRegister, 
   firebaseLogout, 
   firebaseGoogleLogin,
+  firebaseResetPassword,
   onAuthStateChange,
-  formatUser 
+  formatUser,
+  getIdToken
 } from '../src/firebase';
 
 const { width, height } = Dimensions.get('window');
@@ -241,6 +243,9 @@ export default function NutriScanApp() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const [authError, setAuthError] = useState<string | null>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetSent, setResetSent] = useState(false);
 
   // Firebase Auth functions
   const loadAuthState = async () => {
@@ -349,6 +354,32 @@ export default function NutriScanApp() {
     }
     await AsyncStorage.removeItem('auth_user');
     setUser(null);
+  };
+
+  // Password Reset
+  const handlePasswordReset = async () => {
+    if (!resetEmail) {
+      Alert.alert('Erreur', 'Veuillez entrer votre adresse email');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { success, error } = await firebaseResetPassword(resetEmail);
+      if (success) {
+        setResetSent(true);
+        Alert.alert(
+          'Email envoyé !',
+          'Un email de réinitialisation a été envoyé à ' + resetEmail + '. Vérifiez votre boîte de réception (et les spams).',
+          [{ text: 'OK', onPress: () => { setShowForgotPassword(false); setResetSent(false); setResetEmail(''); } }]
+        );
+      } else {
+        Alert.alert('Erreur', error || 'Impossible d\'envoyer l\'email');
+      }
+    } catch (error) {
+      Alert.alert('Erreur', 'Une erreur est survenue');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Data fetching
@@ -654,17 +685,20 @@ export default function NutriScanApp() {
 
   // Generate Weekly Menu (Premium)
   const generateMenu = async () => {
-    if (!user || !token) {
+    if (!user) {
       Alert.alert('Connexion requise', 'Connectez-vous pour générer un menu');
+      setCurrentScreen('auth');
       return;
     }
     if (user.subscription_type !== 'premium') {
       Alert.alert('Premium requis', 'Cette fonctionnalité est réservée aux membres Premium');
+      setCurrentScreen('premium');
       return;
     }
     setMenuLoading(true);
     try {
-      const headers = { Authorization: `Bearer ${token}` };
+      const idToken = await getIdToken();
+      const headers = idToken ? { Authorization: `Bearer ${idToken}` } : {};
       const response = await axios.post(`${API_URL}/generate-menu`, {}, { headers });
       setWeeklyMenu(response.data);
       setCurrentScreen('menu');
@@ -909,6 +943,12 @@ export default function NutriScanApp() {
                 <Ionicons name="alert-circle" size={16} color={colors.error} />
                 <Text style={styles.errorText}>{authError}</Text>
               </View>
+            )}
+
+            {isLogin && (
+              <TouchableOpacity onPress={() => setShowForgotPassword(true)} style={styles.forgotPassword}>
+                <Text style={styles.forgotPasswordText}>Mot de passe oublié ?</Text>
+              </TouchableOpacity>
             )}
 
             <TouchableOpacity
@@ -2193,6 +2233,51 @@ export default function NutriScanApp() {
       {renderAdditiveModal()}
       {renderHealingFoodModal()}
       {renderGoalModal()}
+      
+      {/* Forgot Password Modal */}
+      <Modal visible={showForgotPassword} transparent animationType="slide" onRequestClose={() => setShowForgotPassword(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Mot de passe oublié</Text>
+              <TouchableOpacity onPress={() => { setShowForgotPassword(false); setResetEmail(''); setResetSent(false); }}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.modalBody}>
+              <Text style={styles.forgotPasswordDescription}>
+                Entrez votre adresse email et nous vous enverrons un lien pour réinitialiser votre mot de passe.
+              </Text>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabelBig}>📧 Votre adresse email</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="mail-outline" size={20} color="#666" style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.inputWithIcon}
+                    placeholder="Entrez votre email"
+                    placeholderTextColor="#888888"
+                    value={resetEmail}
+                    onChangeText={setResetEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+              <TouchableOpacity 
+                style={[styles.authButton, loading && styles.authButtonDisabled]} 
+                onPress={handlePasswordReset}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.authButtonText}>Envoyer le lien</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2361,6 +2446,9 @@ const styles = StyleSheet.create({
   switchAuthText: { color: colors.primary, fontSize: 14 },
   errorContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFEBEE', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: colors.error, fontSize: 14, marginLeft: 8, flex: 1 },
+  forgotPassword: { alignItems: 'flex-end', marginBottom: 8, marginTop: -4 },
+  forgotPasswordText: { color: colors.primary, fontSize: 14 },
+  forgotPasswordDescription: { fontSize: 14, color: colors.textSecondary, lineHeight: 22, marginBottom: 20 },
 
   // Scanner
   scannerContainer: { flex: 1, backgroundColor: '#000' },

@@ -10,6 +10,7 @@ import {
   signInWithPopup,
   signInWithCredential,
   updateProfile,
+  sendPasswordResetEmail,
   User
 } from 'firebase/auth';
 import { Platform } from 'react-native';
@@ -82,6 +83,9 @@ export const firebaseGoogleLogin = async () => {
   try {
     // On web, use popup
     if (Platform.OS === 'web') {
+      googleProvider.setCustomParameters({
+        prompt: 'select_account'
+      });
       const result = await signInWithPopup(auth, googleProvider);
       return { user: result.user, error: null };
     } else {
@@ -89,13 +93,34 @@ export const firebaseGoogleLogin = async () => {
       return { user: null, error: 'Utilisez le bouton Google sur mobile' };
     }
   } catch (error: any) {
+    console.log('Google login error:', error.code, error.message);
     let message = 'Connexion Google échouée';
     if (error.code === 'auth/popup-closed-by-user') {
       message = 'Connexion annulée';
     } else if (error.code === 'auth/popup-blocked') {
       message = 'Popup bloquée. Autorisez les popups pour ce site.';
+    } else if (error.code === 'auth/cancelled-popup-request') {
+      message = 'Connexion annulée';
+    } else if (error.code === 'auth/unauthorized-domain') {
+      message = 'Ce domaine n\'est pas autorisé. Contactez le support.';
     }
     return { user: null, error: message };
+  }
+};
+
+// Password Reset
+export const firebaseResetPassword = async (email: string) => {
+  try {
+    await sendPasswordResetEmail(auth, email);
+    return { success: true, error: null };
+  } catch (error: any) {
+    let message = 'Erreur lors de l\'envoi';
+    if (error.code === 'auth/user-not-found') {
+      message = 'Aucun compte trouvé avec cet email';
+    } else if (error.code === 'auth/invalid-email') {
+      message = 'Email invalide';
+    }
+    return { success: false, error: message };
   }
 };
 
@@ -107,6 +132,21 @@ export const onAuthStateChange = (callback: (user: User | null) => void) => {
 // Get current user
 export const getCurrentUser = () => {
   return auth.currentUser;
+};
+
+// Get Firebase ID Token for API calls
+export const getIdToken = async () => {
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    try {
+      const token = await currentUser.getIdToken();
+      return token;
+    } catch (error) {
+      console.log('Error getting ID token:', error);
+      return null;
+    }
+  }
+  return null;
 };
 
 // Convert Firebase user to app user format
