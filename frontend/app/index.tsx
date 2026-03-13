@@ -16,6 +16,7 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Linking,
+  Share,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -914,10 +915,24 @@ export default function NutriScanApp() {
       return;
     }
     if (compareProducts.some(p => p.barcode === productData.barcode)) {
-      Alert.alert('Info', 'Ce produit est déjà dans la comparaison');
+      Alert.alert('Déjà ajouté', 'Ce produit est déjà dans votre liste de comparaison');
       return;
     }
-    setCompareProducts([...compareProducts, productData]);
+    const newList = [...compareProducts, productData];
+    setCompareProducts(newList);
+    Alert.alert(
+      '✅ Produit ajouté !', 
+      `${productData.name} ajouté à la comparaison.\n\nVous avez ${newList.length} produit(s) dans votre liste.\n\nAjoutez au moins 2 produits pour comparer.`,
+      [
+        { text: 'Continuer', style: 'cancel' },
+        { text: 'Voir la comparaison', onPress: () => newList.length >= 2 ? setCurrentScreen('compare') : null }
+      ]
+    );
+  };
+
+  // Check if product is in comparison
+  const isInComparison = (barcode: string) => {
+    return compareProducts.some(p => p.barcode === barcode);
   };
 
   const removeFromComparison = (barcode: string) => {
@@ -956,19 +971,17 @@ export default function NutriScanApp() {
     
     try {
       if (Platform.OS === 'web') {
-        if (navigator.share) {
+        if (typeof navigator !== 'undefined' && navigator.share) {
           await navigator.share({
             title: `NutriScan - ${product.name}`,
             text: shareMessage,
           });
-        } else {
-          // Fallback: copy to clipboard
+        } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
           await navigator.clipboard.writeText(shareMessage);
           Alert.alert('Copié !', 'Le texte a été copié dans le presse-papier');
         }
       } else {
-        // Mobile sharing
-        const { Share } = await import('react-native');
+        // Mobile sharing - use imported Share
         await Share.share({
           message: shareMessage,
           title: `NutriScan - ${product.name}`,
@@ -976,6 +989,7 @@ export default function NutriScanApp() {
       }
     } catch (error) {
       console.log('Share error:', error);
+      Alert.alert('Erreur', 'Impossible de partager');
     }
   };
 
@@ -1067,8 +1081,7 @@ export default function NutriScanApp() {
         URL.revokeObjectURL(url);
         Alert.alert('Téléchargé !', 'Le menu a été téléchargé');
       } else {
-        // Mobile: use native share
-        const { Share } = await import('react-native');
+        // Mobile: use native share - already imported
         await Share.share({
           message: menuText,
           title: 'Menu Hebdomadaire NutriScan',
@@ -2362,7 +2375,16 @@ export default function NutriScanApp() {
               <Ionicons name="share-social-outline" size={22} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.productHeaderAction} onPress={() => addToComparison({ barcode: product.barcode, name: product.name, image_url: product.image_url, health_score: product.health_score })}>
-              <Ionicons name="git-compare-outline" size={22} color={colors.text} />
+              <Ionicons 
+                name={isInComparison(product.barcode) ? 'git-compare' : 'git-compare-outline'} 
+                size={22} 
+                color={isInComparison(product.barcode) ? colors.primary : colors.text} 
+              />
+              {compareProducts.length > 0 && (
+                <View style={styles.compareBadge}>
+                  <Text style={styles.compareBadgeText}>{compareProducts.length}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -3171,7 +3193,9 @@ const styles = StyleSheet.create({
 
   // Product Header Actions
   productHeaderActions: { flexDirection: 'row', alignItems: 'center' },
-  productHeaderAction: { padding: 8, marginLeft: 4 },
+  productHeaderAction: { padding: 8, marginLeft: 4, position: 'relative' },
+  compareBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: colors.primary, borderRadius: 10, minWidth: 18, height: 18, justifyContent: 'center', alignItems: 'center' },
+  compareBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
 
   // Goal Alerts
   goalAlertsContainer: { marginHorizontal: 16, marginBottom: 12 },
