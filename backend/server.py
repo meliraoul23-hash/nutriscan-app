@@ -1003,17 +1003,17 @@ async def create_checkout_session(request: CreateCheckoutRequest, user: User = D
     if not user_email:
         raise HTTPException(status_code=401, detail="Email requis pour le paiement")
     
-    # Define prices
+    # Define prices - Updated to new pricing (9.99€/month, 69.99€/year)
     prices = {
         'monthly': {
-            'amount': 1999,  # 19.99 EUR in cents
+            'amount': 999,  # 9.99 EUR in cents
             'interval': 'month',
             'name': 'NutriScan Premium - Mensuel'
         },
         'yearly': {
-            'amount': 14999,  # 149.99 EUR in cents
+            'amount': 6999,  # 69.99 EUR in cents
             'interval': 'year',
-            'name': 'NutriScan Premium - Annuel'
+            'name': 'NutriScan Premium - Annuel (Économisez 40%)'
         }
     }
     
@@ -1340,6 +1340,119 @@ async def check_product_against_goals(barcode: str, user: User = Depends(get_cur
     except Exception as e:
         logger.error(f"Goal check error: {str(e)}")
         return {"alerts": [], "recommendations": []}
+
+# ============== FIND BETTER ALTERNATIVES ==============
+@api_router.get("/find-better/{barcode}")
+async def find_better_alternatives(barcode: str):
+    """Find healthier alternatives for a product based on its category"""
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            # First, get the original product to find its category
+            response = await client.get(f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json")
+            data = response.json()
+            
+            if data.get('status') != 1:
+                raise HTTPException(status_code=404, detail="Produit non trouvé")
+            
+            original = data.get('product', {})
+            original_score = calculate_health_score(original)
+            original_name = original.get('product_name', 'Produit')
+            
+            # Get categories and product name for search
+            categories = original.get('categories_tags', [])
+            product_name_words = original_name.split()[:2]  # First 2 words
+            
+            alternatives = []
+            
+            # Strategy 1: Search by product type (first words of name)
+            if product_name_words:
+                search_term = ' '.join(product_name_words)
+                search_url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={search_term}&search_simple=1&action=process&json=1&page_size=30&sort_by=nutriscore_score"
+                
+                try:
+                    search_response = await client.get(search_url)
+                    search_data = search_response.json()
+                    
+                    for p in search_data.get('products', []):
+                        p_barcode = p.get('code', '')
+                        if p_barcode == barcode:
+                            continue
+                        
+                        p_score = calculate_health_score(p)
+                        p_name = p.get('product_name', '')
+                        
+                        # Only include if better score and has a name
+                        if p_score > original_score and p_name:
+                            alternatives.append({
+                                "barcode": p_barcode,
+                                "name": p_name,
+                                "brand": p.get('brands', ''),
+                                "image_url": p.get('image_url', ''),
+                                "health_score": p_score,
+                                "nutri_score": p.get('nutriscore_grade', '').upper() or 'N/A',
+                                "score_difference": p_score - original_score,
+                                "search_term": search_term
+                            })
+                except Exception as e:
+                    logger.error(f"Search error: {e}")
+            
+            # Strategy 2: Search by main category
+            if len(alternatives) < 5 and categories:
+                for category in categories[:2]:
+                    category_clean = category.replace('en:', '').replace('fr:', '').replace('-', ' ')
+                    search_url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={category_clean}&search_simple=1&action=process&json=1&page_size=30&sort_by=nutriscore_score"
+                    
+                    try:
+                        search_response = await client.get(search_url)
+                        search_data = search_response.json()
+                        
+                        for p in search_data.get('products', []):
+                            p_barcode = p.get('code', '')
+                            if p_barcode == barcode:
+                                continue
+                            
+                            # Check if already added
+                            if any(a['barcode'] == p_barcode for a in alternatives):
+                                continue
+                            
+                            p_score = calculate_health_score(p)
+                            p_name = p.get('product_name', '')
+                            
+                            if p_score > original_score and p_name:
+                                alternatives.append({
+                                    "barcode": p_barcode,
+                                    "name": p_name,
+                                    "brand": p.get('brands', ''),
+                                    "image_url": p.get('image_url', ''),
+                                    "health_score": p_score,
+                                    "nutri_score": p.get('nutriscore_grade', '').upper() or 'N/A',
+                                    "score_difference": p_score - original_score,
+                                    "search_term": category_clean
+                                })
+                        
+                        if len(alternatives) >= 5:
+                            break
+                    except:
+                        continue
+            
+            # Sort by score difference (best improvements first) and take top 5
+            alternatives = sorted(alternatives, key=lambda x: x['score_difference'], reverse=True)[:5]
+            
+            return {
+                "original": {
+                    "barcode": barcode,
+                    "name": original_name,
+                    "health_score": original_score,
+                    "nutri_score": original.get('nutriscore_grade', '').upper() or 'N/A'
+                },
+                "alternatives": alternatives,
+                "message": f"Trouvé {len(alternatives)} alternative(s) plus saine(s)" if alternatives else "Ce produit est déjà un bon choix dans sa catégorie !"
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Find better error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la recherche d'alternatives")
 
 # ============== PRODUCT COMPARISON ==============
 @api_router.post("/compare")

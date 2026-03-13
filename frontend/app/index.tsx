@@ -599,12 +599,16 @@ export default function NutriScanApp() {
           nutri_score: productData.nutri_score,
         }, { headers }).catch((err) => console.log('History save error:', err));
 
-        // Fetch alternatives in background if score is below 70
-        if (productData.health_score < 70) {
-          axios.get(`${API_URL}/alternatives/${barcode}`, { timeout: 10000 })
-            .then(altResponse => setAlternatives(altResponse.data || []))
-            .catch(() => setAlternatives([]));
-        }
+        // Fetch alternatives in background
+        axios.get(`${API_URL}/find-better/${barcode}`, { timeout: 15000 })
+          .then(altResponse => {
+            console.log('Alternatives found:', altResponse.data?.alternatives?.length);
+            setAlternatives(altResponse.data?.alternatives || []);
+          })
+          .catch((err) => {
+            console.log('Alternatives error:', err);
+            setAlternatives([]);
+          });
         
         // Refresh history in background
         fetchHistory();
@@ -2088,7 +2092,7 @@ export default function NutriScanApp() {
         onPress={() => setSelectedPlan('yearly')}
       >
         <View style={styles.pricingBadge}>
-          <Text style={styles.pricingBadgeText}>ÉCONOMISEZ 25%</Text>
+          <Text style={styles.pricingBadgeText}>ÉCONOMISEZ 40%</Text>
         </View>
         <View style={styles.pricingCardContent}>
           <View style={styles.pricingRadio}>
@@ -2103,11 +2107,11 @@ export default function NutriScanApp() {
             <Text style={styles.pricingPlanDesc}>Facturé une fois par an</Text>
           </View>
           <View style={styles.pricingPriceContainer}>
-            <Text style={styles.pricingPrice}>149,99 €</Text>
+            <Text style={styles.pricingPrice}>69,99 €</Text>
             <Text style={styles.pricingPeriod}>/an</Text>
           </View>
         </View>
-        <Text style={styles.pricingMonthly}>Soit 12,50 €/mois</Text>
+        <Text style={styles.pricingMonthly}>Soit 5,83 €/mois</Text>
       </TouchableOpacity>
 
       <TouchableOpacity 
@@ -2127,7 +2131,7 @@ export default function NutriScanApp() {
             <Text style={styles.pricingPlanDesc}>Sans engagement</Text>
           </View>
           <View style={styles.pricingPriceContainer}>
-            <Text style={styles.pricingPrice}>19,99 €</Text>
+            <Text style={styles.pricingPrice}>9,99 €</Text>
             <Text style={styles.pricingPeriod}>/mois</Text>
           </View>
         </View>
@@ -2137,7 +2141,7 @@ export default function NutriScanApp() {
       <TouchableOpacity style={styles.subscribeButton} onPress={() => handlePremiumSubscription()}>
         <Ionicons name="lock-closed" size={20} color="#FFF" />
         <Text style={styles.subscribeButtonText}>
-          S'abonner - {selectedPlan === 'yearly' ? '149,99 €/an' : '19,99 €/mois'}
+          S'abonner - {selectedPlan === 'yearly' ? '69,99 €/an' : '9,99 €/mois'}
         </Text>
       </TouchableOpacity>
 
@@ -2502,10 +2506,16 @@ export default function NutriScanApp() {
           </View>
         )}
 
-        {/* Alternatives */}
+        {/* Alternatives plus saines */}
         {alternatives.length > 0 && (
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionCardTitle}>Alternatives plus saines</Text>
+            <View style={styles.alternativesHeader}>
+              <Text style={styles.sectionCardTitle}>Alternatives plus saines</Text>
+              <View style={styles.alternativesBadge}>
+                <Ionicons name="trending-up" size={14} color="#FFF" />
+                <Text style={styles.alternativesBadgeText}>{alternatives.length} trouvé(s)</Text>
+              </View>
+            </View>
             {alternatives.map((alt, index) => (
               <TouchableOpacity key={index} style={styles.alternativeItem} onPress={() => fetchProduct(alt.barcode)}>
                 <View style={styles.alternativeImageContainer}>
@@ -2513,13 +2523,26 @@ export default function NutriScanApp() {
                 </View>
                 <View style={styles.alternativeInfo}>
                   <Text style={styles.alternativeName} numberOfLines={1}>{alt.name}</Text>
-                  <Text style={styles.alternativeBrand} numberOfLines={1}>{alt.brand}</Text>
+                  <Text style={styles.alternativeBrand} numberOfLines={1}>{alt.brand || 'Marque inconnue'}</Text>
+                  <View style={styles.scoreGainBadge}>
+                    <Ionicons name="arrow-up" size={12} color={colors.success} />
+                    <Text style={styles.scoreGainText}>+{alt.score_difference} pts</Text>
+                  </View>
                 </View>
                 <View style={[styles.alternativeScore, { backgroundColor: getScoreColor(alt.health_score) }]}>
                   <Text style={styles.alternativeScoreText}>{alt.health_score}</Text>
                 </View>
               </TouchableOpacity>
             ))}
+          </View>
+        )}
+
+        {/* Message si pas d'alternatives */}
+        {alternatives.length === 0 && product.health_score >= 70 && (
+          <View style={styles.goodChoiceCard}>
+            <Ionicons name="checkmark-circle" size={32} color={colors.success} />
+            <Text style={styles.goodChoiceTitle}>Excellent choix !</Text>
+            <Text style={styles.goodChoiceText}>Ce produit est déjà parmi les meilleurs de sa catégorie.</Text>
           </View>
         )}
 
@@ -2976,6 +2999,9 @@ const styles = StyleSheet.create({
   ingredientsText: { fontSize: 14, color: colors.text, lineHeight: 22, backgroundColor: colors.surface, padding: 12, borderRadius: 8 },
 
   // Alternatives
+  alternativesHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  alternativesBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.success, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  alternativesBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '600', marginLeft: 4 },
   alternativeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.surface },
   alternativeImageContainer: { width: 44, height: 44, borderRadius: 8, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   alternativeImage: { width: 44, height: 44, resizeMode: 'contain' },
@@ -2984,6 +3010,13 @@ const styles = StyleSheet.create({
   alternativeBrand: { fontSize: 12, color: colors.textSecondary },
   alternativeScore: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
   alternativeScoreText: { color: '#FFF', fontWeight: '600', fontSize: 12 },
+  scoreGainBadge: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  scoreGainText: { fontSize: 11, fontWeight: '600', color: colors.success, marginLeft: 2 },
+  
+  // Good choice card
+  goodChoiceCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 20, alignItems: 'center', marginTop: 16 },
+  goodChoiceTitle: { fontSize: 16, fontWeight: '700', color: colors.success, marginTop: 8 },
+  goodChoiceText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: 4 },
 
   // Buttons
   scanAnotherButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, marginHorizontal: 16, marginVertical: 20, paddingVertical: 16, borderRadius: 12 },
