@@ -964,19 +964,16 @@ export default function NutriScanApp() {
         await navigator.clipboard.writeText(menuText);
         Alert.alert('Copié !', 'Le menu a été copié dans le presse-papier');
       } else {
-        const Clipboard = await import('@react-native-clipboard/clipboard').then(m => m.default).catch(() => null);
-        if (Clipboard) {
-          Clipboard.setString(menuText);
-          Alert.alert('Copié !', 'Le menu a été copié dans le presse-papier');
-        } else {
-          // Fallback: use Share
-          await shareMenu();
-        }
+        // On mobile, use Share instead of clipboard (more reliable)
+        const { Share } = await import('react-native');
+        await Share.share({
+          message: menuText,
+          title: 'Menu Hebdomadaire NutriScan',
+        });
       }
     } catch (error) {
       console.log('Copy error:', error);
-      // Fallback to share
-      await shareMenu();
+      Alert.alert('Info', 'Utilisez le bouton Partager pour envoyer le menu');
     }
   };
 
