@@ -1,0 +1,223 @@
+// Premium Subscription Screen
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  Linking,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import { useAuth } from '../src/contexts/AuthContext';
+import { createCheckoutSessionAPI } from '../src/services/api';
+import { colors } from '../src/styles/colors';
+
+const FEATURES = [
+  { icon: 'restaurant', name: 'Menu IA personnalisé', desc: 'Un menu hebdomadaire adapté à vos objectifs' },
+  { icon: 'chatbubbles', name: 'Coach IA illimité', desc: 'Posez toutes vos questions nutrition' },
+  { icon: 'cart', name: 'Liste de courses', desc: 'Générée automatiquement avec le menu' },
+  { icon: 'fitness', name: 'Exercices personnalisés', desc: 'Basés sur vos objectifs santé' },
+];
+
+export default function PremiumScreen() {
+  const router = useRouter();
+  const { user, checkPremiumStatus } = useAuth();
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('monthly');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubscribe = async () => {
+    if (!user) {
+      router.push('/auth');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const successUrl = 'https://nutriscan-167.preview.emergentagent.com/?payment=success';
+      const cancelUrl = 'https://nutriscan-167.preview.emergentagent.com/?payment=cancelled';
+      
+      const { checkout_url } = await createCheckoutSessionAPI(
+        selectedPlan,
+        successUrl,
+        cancelUrl,
+        user.email,
+        user.user_id
+      );
+
+      await Linking.openURL(checkout_url);
+      
+      // Check premium status after user returns
+      setTimeout(async () => {
+        await checkPremiumStatus();
+      }, 5000);
+    } catch (error) {
+      console.log('Checkout error:', error);
+      Alert.alert('Erreur', 'Impossible de lancer le paiement. Réessayez.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={colors.text} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Premium</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {/* Premium Icon */}
+        <View style={styles.premiumHeader}>
+          <View style={styles.premiumIcon}>
+            <Ionicons name="star" size={40} color={colors.premium} />
+          </View>
+          <Text style={styles.premiumTitle}>NutriScan Premium</Text>
+          <Text style={styles.premiumSubtitle}>Débloquez toutes les fonctionnalités</Text>
+        </View>
+
+        {/* Features */}
+        <View style={styles.featuresList}>
+          {FEATURES.map((feature, index) => (
+            <View key={index} style={styles.featureItem}>
+              <View style={styles.featureIcon}>
+                <Ionicons name={feature.icon as any} size={24} color={colors.primary} />
+              </View>
+              <View style={styles.featureText}>
+                <Text style={styles.featureName}>{feature.name}</Text>
+                <Text style={styles.featureDesc}>{feature.desc}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Pricing */}
+        <Text style={styles.pricingTitle}>Choisissez votre formule</Text>
+
+        {/* Monthly */}
+        <TouchableOpacity
+          style={[styles.pricingCard, selectedPlan === 'monthly' && styles.pricingCardSelected]}
+          onPress={() => setSelectedPlan('monthly')}
+        >
+          <View style={styles.pricingContent}>
+            <View style={styles.pricingRadio}>
+              <Ionicons
+                name={selectedPlan === 'monthly' ? 'radio-button-on' : 'radio-button-off'}
+                size={24}
+                color={selectedPlan === 'monthly' ? colors.primary : colors.textSecondary}
+              />
+            </View>
+            <View style={styles.pricingInfo}>
+              <Text style={styles.pricingPlanName}>Mensuel</Text>
+              <Text style={styles.pricingPlanDesc}>Sans engagement</Text>
+            </View>
+            <View style={styles.pricingPriceContainer}>
+              <Text style={styles.pricingPrice}>9,99€</Text>
+              <Text style={styles.pricingPeriod}>/mois</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Yearly */}
+        <TouchableOpacity
+          style={[styles.pricingCard, selectedPlan === 'yearly' && styles.pricingCardSelected]}
+          onPress={() => setSelectedPlan('yearly')}
+        >
+          <View style={styles.pricingBadge}>
+            <Text style={styles.pricingBadgeText}>-37%</Text>
+          </View>
+          <View style={styles.pricingContent}>
+            <View style={styles.pricingRadio}>
+              <Ionicons
+                name={selectedPlan === 'yearly' ? 'radio-button-on' : 'radio-button-off'}
+                size={24}
+                color={selectedPlan === 'yearly' ? colors.primary : colors.textSecondary}
+              />
+            </View>
+            <View style={styles.pricingInfo}>
+              <Text style={styles.pricingPlanName}>Annuel</Text>
+              <Text style={styles.pricingPlanDesc}>Meilleure offre</Text>
+            </View>
+            <View style={styles.pricingPriceContainer}>
+              <Text style={styles.pricingPrice}>74,99€</Text>
+              <Text style={styles.pricingPeriod}>/an</Text>
+            </View>
+          </View>
+          <Text style={styles.pricingMonthly}>soit 6,25€/mois</Text>
+        </TouchableOpacity>
+
+        {/* Subscribe Button */}
+        <TouchableOpacity
+          style={styles.subscribeButton}
+          onPress={handleSubscribe}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <>
+              <Ionicons name="lock-open" size={20} color="#FFF" />
+              <Text style={styles.subscribeButtonText}>S'abonner maintenant</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.subscribeNote}>
+          Paiement sécurisé par Stripe. Annulez à tout moment.
+        </Text>
+
+        {/* Guarantee */}
+        <View style={styles.guaranteeBox}>
+          <Ionicons name="shield-checkmark" size={24} color={colors.success} />
+          <Text style={styles.guaranteeText}>Satisfait ou remboursé pendant 7 jours</Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.surface },
+  backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: '600', color: colors.text },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  premiumHeader: { alignItems: 'center', marginBottom: 24 },
+  premiumIcon: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#FFF8E1', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  premiumTitle: { fontSize: 28, fontWeight: '700', color: colors.text },
+  premiumSubtitle: { fontSize: 16, color: colors.textSecondary, marginTop: 8 },
+  featuresList: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 24 },
+  featureItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.background },
+  featureIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
+  featureText: { flex: 1, marginLeft: 12 },
+  featureName: { fontSize: 15, fontWeight: '600', color: colors.text },
+  featureDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
+  pricingTitle: { fontSize: 18, fontWeight: '700', color: colors.text, marginBottom: 16 },
+  pricingCard: { backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 2, borderColor: 'transparent' },
+  pricingCardSelected: { borderColor: colors.primary, backgroundColor: colors.surfaceAlt },
+  pricingBadge: { position: 'absolute', top: -10, right: 16, backgroundColor: colors.premium, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  pricingBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
+  pricingContent: { flexDirection: 'row', alignItems: 'center' },
+  pricingRadio: { marginRight: 12 },
+  pricingInfo: { flex: 1 },
+  pricingPlanName: { fontSize: 16, fontWeight: '600', color: colors.text },
+  pricingPlanDesc: { fontSize: 13, color: colors.textSecondary },
+  pricingPriceContainer: { flexDirection: 'row', alignItems: 'baseline' },
+  pricingPrice: { fontSize: 24, fontWeight: '700', color: colors.text },
+  pricingPeriod: { fontSize: 14, color: colors.textSecondary, marginLeft: 2 },
+  pricingMonthly: { textAlign: 'center', fontSize: 13, color: colors.primary, fontWeight: '500', marginTop: 8 },
+  subscribeButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.primary, paddingVertical: 18, borderRadius: 12, marginTop: 16 },
+  subscribeButtonText: { color: '#FFF', fontSize: 18, fontWeight: '700', marginLeft: 8 },
+  subscribeNote: { textAlign: 'center', fontSize: 12, color: colors.textSecondary, marginTop: 12 },
+  guaranteeBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', padding: 16, borderRadius: 12, marginTop: 20 },
+  guaranteeText: { fontSize: 14, color: colors.success, fontWeight: '500', marginLeft: 8 },
+});
