@@ -30,8 +30,8 @@ export default function HomeScreen() {
     router.push('/scanner');
   };
 
-  const handleProductPress = (barcode: string) => {
-    fetchProduct(barcode);
+  const handleProductPress = async (barcode: string) => {
+    await fetchProduct(barcode);
     router.push('/product');
   };
 
