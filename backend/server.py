@@ -1893,31 +1893,38 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         import tempfile
         import os
         
-        # Save uploaded file temporarily
+        # Read file content as bytes
         content = await audio.read()
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".m4a") as temp_file:
+        # Get file extension
+        filename = audio.filename or "audio.m4a"
+        ext = filename.split(".")[-1] if "." in filename else "m4a"
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_file:
             temp_file.write(content)
             temp_path = temp_file.name
         
-        logger.info(f"Received audio file: {len(content)} bytes")
+        logger.info(f"Received audio file: {len(content)} bytes, extension: {ext}")
         
         try:
             # Use OpenAI Whisper API for transcription
             async with httpx.AsyncClient(timeout=60.0) as http_client:
                 with open(temp_path, "rb") as audio_file:
+                    files = {
+                        "file": (f"audio.{ext}", audio_file, f"audio/{ext}"),
+                    }
+                    data = {
+                        "model": "whisper-1",
+                        "language": "fr",
+                    }
+                    
                     response = await http_client.post(
                         "https://api.openai.com/v1/audio/transcriptions",
                         headers={
                             "Authorization": f"Bearer {EMERGENT_LLM_KEY}"
                         },
-                        files={
-                            "file": ("audio.m4a", audio_file, "audio/m4a"),
-                        },
-                        data={
-                            "model": "whisper-1",
-                            "language": "fr",
-                        }
+                        files=files,
+                        data=data
                     )
                     
                     logger.info(f"Whisper response status: {response.status_code}")
@@ -1925,10 +1932,11 @@ async def transcribe_audio(audio: UploadFile = File(...)):
                     if response.status_code == 200:
                         result = response.json()
                         transcribed_text = result.get("text", "")
-                        logger.info(f"Transcribed text: {transcribed_text[:100]}...")
+                        logger.info(f"Transcribed text: {transcribed_text[:100] if transcribed_text else 'empty'}...")
                         return {"text": transcribed_text, "success": True}
                     else:
-                        logger.error(f"Whisper error: {response.text}")
+                        error_text = response.text
+                        logger.error(f"Whisper error: {error_text}")
                         return {"text": "", "success": False, "error": f"Whisper API error: {response.status_code}"}
         finally:
             # Clean up temp file
@@ -1936,7 +1944,9 @@ async def transcribe_audio(audio: UploadFile = File(...)):
                 os.remove(temp_path)
                 
     except Exception as e:
-        logger.error(f"Transcription error: {e}")
+        logger.error(f"Transcription error: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {"text": "", "success": False, "error": str(e)}
 
 # Include router and middleware

@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
-import { useAudioRecorder, RecordingPresets, AudioModule } from 'expo-audio';
+import { Audio } from 'expo-av';
 import Constants from 'expo-constants';
 import { useAuth } from '../src/contexts/AuthContext';
 import { useApp } from '../src/contexts/AppContext';
@@ -42,27 +42,41 @@ export default function CoachScreen() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState(false);
-  
-  // Audio recorder hook
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
 
-  // Request permissions on mount
+  // Setup audio permissions on mount
   useEffect(() => {
-    const requestPermissions = async () => {
+    const setupAudio = async () => {
       try {
-        const status = await AudioModule.requestRecordingPermissionsAsync();
-        setPermissionGranted(status.granted);
-        if (!status.granted) {
-          console.log('Microphone permission not granted');
+        // Request microphone permissions
+        const { status } = await Audio.requestPermissionsAsync();
+        console.log('Audio permission status:', status);
+        setPermissionGranted(status === 'granted');
+        
+        if (status === 'granted') {
+          // Configure audio mode for recording
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: false,
+            shouldDuckAndroid: true,
+            playThroughEarpieceAndroid: false,
+          });
+          console.log('Audio mode configured successfully');
         }
       } catch (error) {
-        console.log('Error requesting permissions:', error);
+        console.log('Error setting up audio:', error);
       }
     };
-    requestPermissions();
+    
+    setupAudio();
 
     return () => {
       Speech.stop();
+      if (recording) {
+        recording.stopAndUnloadAsync();
+      }
     };
   }, []);
 
@@ -70,38 +84,77 @@ export default function CoachScreen() {
     if (!permissionGranted) {
       Alert.alert(
         'Permission requise',
-        'Autorisez l\'accès au microphone pour utiliser la fonction vocale.',
+        'Autorisez l\'accès au microphone dans les paramètres de votre téléphone pour utiliser la fonction vocale.',
         [{ text: 'OK' }]
       );
       return;
     }
 
     try {
+      // Make sure any previous recording is cleaned up
+      if (recording) {
+        try {
+          await recording.stopAndUnloadAsync();
+        } catch (e) {
+          // Ignore errors from stopping
+        }
+        setRecording(null);
+      }
+
+      // Configure audio mode for recording
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      
       console.log('Starting recording...');
-      audioRecorder.record();
+      
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(newRecording);
+      setIsRecording(true);
+      console.log('Recording started successfully');
     } catch (error) {
       console.log('Error starting recording:', error);
-      Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement');
+      Alert.alert('Erreur', 'Impossible de démarrer l\'enregistrement. Vérifiez les permissions du microphone.');
     }
   };
 
   const stopRecording = async () => {
-    if (!audioRecorder.isRecording) return;
+    if (!recording || !isRecording) return;
 
+    setIsRecording(false);
     setIsTranscribing(true);
     console.log('Stopping recording...');
 
     try {
-      await audioRecorder.stop();
-      const uri = audioRecorder.uri;
+      await recording.stopAndUnloadAsync();
+      
+      // Reset audio mode for playback
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+      
+      const uri = recording.getURI();
       console.log('Recording URI:', uri);
+      setRecording(null);
 
       if (uri) {
         await transcribeAndSend(uri);
+      } else {
+        Alert.alert('Erreur', 'Aucun audio enregistré');
+        setIsTranscribing(false);
       }
     } catch (error) {
       console.log('Error stopping recording:', error);
       setIsTranscribing(false);
+      Alert.alert('Erreur', 'Erreur lors de l\'arrêt de l\'enregistrement');
     }
   };
 
@@ -119,7 +172,7 @@ export default function CoachScreen() {
         name: 'recording.m4a',
       } as any);
 
-      console.log('Sending audio for transcription...');
+      console.log('Sending audio for transcription to:', `${backendUrl}/api/transcribe`);
       
       const response = await fetch(`${backendUrl}/api/transcribe`, {
         method: 'POST',
@@ -136,11 +189,15 @@ export default function CoachScreen() {
         // Send the transcribed message
         await sendMessage(data.text);
       } else {
-        Alert.alert('Transcription', 'Impossible de transcrire l\'audio. Réessayez ou tapez votre message.');
+        Alert.alert(
+          'Transcription échouée', 
+          'Je n\'ai pas pu comprendre l\'audio. Réessayez ou tapez votre message.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (error) {
       console.log('Transcription error:', error);
-      Alert.alert('Erreur', 'Erreur de transcription. Réessayez.');
+      Alert.alert('Erreur', 'Erreur de transcription. Vérifiez votre connexion internet.');
     } finally {
       setIsTranscribing(false);
     }
@@ -197,6 +254,14 @@ export default function CoachScreen() {
     }
   };
 
+  const handleMicPress = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       {/* Header */}
@@ -220,10 +285,10 @@ export default function CoachScreen() {
       </View>
 
       {/* Recording/Transcribing Indicator */}
-      {audioRecorder.isRecording && (
+      {isRecording && (
         <View style={styles.recordingIndicator}>
           <View style={styles.recordingDot} />
-          <Text style={styles.recordingText}>🎤 Parlez maintenant...</Text>
+          <Text style={styles.recordingText}>🎤 Parlez maintenant... Appuyez pour arrêter</Text>
         </View>
       )}
 
@@ -256,11 +321,23 @@ export default function CoachScreen() {
                 Parlez-moi ! Appuyez sur le bouton micro et posez votre question à voix haute. Je vous répondrai également à voix haute.
               </Text>
               
+              {/* Permission Status */}
+              <View style={[styles.permissionStatus, { backgroundColor: permissionGranted ? '#E8F5E9' : '#FFF3E0' }]}>
+                <Ionicons 
+                  name={permissionGranted ? 'checkmark-circle' : 'alert-circle'} 
+                  size={20} 
+                  color={permissionGranted ? colors.success : colors.warning} 
+                />
+                <Text style={[styles.permissionText, { color: permissionGranted ? colors.success : colors.warning }]}>
+                  {permissionGranted ? 'Microphone activé ✓' : 'Autorisez le microphone pour parler'}
+                </Text>
+              </View>
+              
               {/* Voice Instructions */}
               <View style={styles.voiceInstructions}>
                 <View style={styles.instructionStep}>
                   <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
-                  <Text style={styles.instructionText}>Appuyez sur le bouton 🎤</Text>
+                  <Text style={styles.instructionText}>Appuyez sur le bouton 🎤 violet</Text>
                 </View>
                 <View style={styles.instructionStep}>
                   <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
@@ -272,7 +349,7 @@ export default function CoachScreen() {
                 </View>
               </View>
               
-              <Text style={styles.orText}>— ou tapez une suggestion —</Text>
+              <Text style={styles.orText}>— ou choisissez une suggestion —</Text>
               
               <View style={styles.suggestions}>
                 {SUGGESTIONS.map((suggestion, index) => (
@@ -339,17 +416,18 @@ export default function CoachScreen() {
           <TouchableOpacity
             style={[
               styles.voiceButton,
-              audioRecorder.isRecording && styles.voiceButtonRecording,
+              isRecording && styles.voiceButtonRecording,
               isTranscribing && styles.voiceButtonTranscribing,
+              !permissionGranted && styles.voiceButtonDisabled,
             ]}
-            onPress={audioRecorder.isRecording ? stopRecording : startRecording}
+            onPress={handleMicPress}
             disabled={isTyping || isTranscribing}
           >
             {isTranscribing ? (
               <ActivityIndicator size="small" color="#FFF" />
             ) : (
               <Ionicons 
-                name={audioRecorder.isRecording ? 'stop' : 'mic'} 
+                name={isRecording ? 'stop' : 'mic'} 
                 size={28} 
                 color="#FFF" 
               />
@@ -388,19 +466,21 @@ const styles = StyleSheet.create({
   recordingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E53935', paddingVertical: 12, paddingHorizontal: 16 },
   transcribingIndicator: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#9C27B0', paddingVertical: 12, paddingHorizontal: 16 },
   recordingDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFF', marginRight: 10 },
-  recordingText: { color: '#FFF', fontSize: 15, fontWeight: '600' },
+  recordingText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
   messagesContainer: { flex: 1, backgroundColor: colors.background },
   messagesContent: { padding: 16, paddingBottom: 100 },
-  welcome: { alignItems: 'center', paddingVertical: 30 },
+  welcome: { alignItems: 'center', paddingVertical: 20 },
   welcomeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 8 },
-  welcomeText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20, marginBottom: 20 },
-  voiceInstructions: { backgroundColor: colors.surfaceAlt, borderRadius: 16, padding: 16, width: '100%', marginBottom: 20 },
+  welcomeText: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: 20, marginBottom: 16 },
+  permissionStatus: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20, marginBottom: 16 },
+  permissionText: { fontSize: 13, fontWeight: '600', marginLeft: 8 },
+  voiceInstructions: { backgroundColor: colors.surfaceAlt, borderRadius: 16, padding: 16, width: '100%', marginBottom: 16 },
   instructionStep: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   stepNumber: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   stepNumberText: { color: '#FFF', fontWeight: '700', fontSize: 14 },
   instructionText: { fontSize: 14, color: colors.text, fontWeight: '500' },
-  orText: { fontSize: 12, color: colors.textSecondary, marginVertical: 16 },
+  orText: { fontSize: 12, color: colors.textSecondary, marginVertical: 12 },
   suggestions: { marginTop: 8, width: '100%' },
   suggestion: { backgroundColor: colors.surface, padding: 14, borderRadius: 12, marginBottom: 10 },
   suggestionText: { fontSize: 14, color: colors.text },
@@ -418,6 +498,7 @@ const styles = StyleSheet.create({
   voiceButton: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
   voiceButtonRecording: { backgroundColor: '#E53935' },
   voiceButtonTranscribing: { backgroundColor: '#FF9800' },
+  voiceButtonDisabled: { backgroundColor: '#BDBDBD' },
   input: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, fontSize: 14, color: colors.text, maxHeight: 100 },
   sendButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', marginLeft: 8 },
   sendButtonDisabled: { opacity: 0.5 },
