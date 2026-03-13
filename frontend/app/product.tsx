@@ -1,5 +1,5 @@
-// Product Detail Screen - Premium Redesign
-import React, { useState, useRef, useEffect } from 'react';
+// Product Detail - Premium Bento Grid Design with Glassmorphism
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,22 +7,30 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  ActivityIndicator,
   Share,
   Linking,
   Animated,
+  Dimensions,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../src/contexts/AppContext';
 import { useAuth } from '../src/contexts/AuthContext';
-import { theme, getScoreGradient, getNutriScoreColor, getAdditiveColor } from '../src/styles/theme';
-import { AnimatedScoreGauge } from '../src/components/AnimatedScoreGauge';
-import { ProductDetailSkeleton } from '../src/components/SkeletonLoader';
+import { premiumTheme, getScoreColor, getNutriColor, getAdditiveRiskColor } from '../src/styles/premiumTheme';
+import { GlassCard, BentoRow } from '../src/components/GlassCard';
+import { ScoreRing3D } from '../src/components/ScoreRing3D';
 import { toggleFavoriteAPI, findBetterAlternativesAPI } from '../src/services/api';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const BENTO_GAP = 12;
+const PADDING = 20;
+const CARD_SMALL = (SCREEN_WIDTH - PADDING * 2 - BENTO_GAP * 2) / 3;
+const CARD_MEDIUM = (SCREEN_WIDTH - PADDING * 2 - BENTO_GAP) / 2;
+const CARD_LARGE = SCREEN_WIDTH - PADDING * 2;
 
 export default function ProductScreen() {
   const router = useRouter();
@@ -30,302 +38,283 @@ export default function ProductScreen() {
   const { currentProduct: product, favorites, setFavorites } = useApp();
   
   const [alternatives, setAlternatives] = useState<any[]>([]);
-  const [loadingAlternatives, setLoadingAlternatives] = useState(false);
   const [isFavorite, setIsFavorite] = useState(false);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (product) {
-      // Entry animation
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Check if favorite
-      setIsFavorite(favorites.some(f => f.barcode === product.barcode));
-
-      // Load alternatives
+      setIsFavorite(favorites?.some(f => f.barcode === product.barcode) || false);
       loadAlternatives();
     }
   }, [product]);
 
   const loadAlternatives = async () => {
     if (!product?.barcode) return;
-    setLoadingAlternatives(true);
     try {
       const data = await findBetterAlternativesAPI(product.barcode);
       setAlternatives(data || []);
     } catch (error) {
       console.log('Error loading alternatives:', error);
-    } finally {
-      setLoadingAlternatives(false);
     }
   };
 
   const handleShare = async () => {
     if (!product) return;
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `${product.name} - Score Santé: ${product.health_score}/100\n\nDécouvert avec NutriScan 🥗`,
-        title: `NutriScan - ${product.name}`,
+        message: `${product.name} - Score: ${product.health_score}/100 🥗\n\nDécouvert avec NutriScan`,
       });
-    } catch (error) {
-      console.log('Share error:', error);
-    }
+    } catch (error) {}
   };
 
   const handleFavorite = async () => {
     if (!product || !user) return;
-    if (Platform.OS !== 'web') {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-    
+    if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       const result = await toggleFavoriteAPI(user.email, product.barcode, product.name, product.health_score);
       if (result.added) {
-        setFavorites([...favorites, { barcode: product.barcode, product_name: product.name }]);
+        setFavorites([...(favorites || []), { barcode: product.barcode, product_name: product.name }]);
         setIsFavorite(true);
       } else {
-        setFavorites(favorites.filter(f => f.barcode !== product.barcode));
+        setFavorites((favorites || []).filter(f => f.barcode !== product.barcode));
         setIsFavorite(false);
       }
-    } catch (error) {
-      console.log('Favorite error:', error);
-    }
+    } catch (error) {}
   };
 
   if (!product) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <ProductDetailSkeleton />
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Chargement...</Text>
+        </View>
       </SafeAreaView>
     );
   }
 
+  const scoreColor = getScoreColor(product.health_score || 50);
+  const nutriColor = getNutriColor(product.nutri_score);
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+    <View style={styles.container}>
+      {/* Background Gradient */}
+      <LinearGradient
+        colors={[scoreColor + '15', premiumTheme.light.background, premiumTheme.light.background]}
+        style={StyleSheet.absoluteFill}
+      />
+
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
-          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>Détails produit</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={handleFavorite} style={styles.headerBtn}>
-            <Ionicons 
-              name={isFavorite ? "heart" : "heart-outline"} 
-              size={24} 
-              color={isFavorite ? theme.colors.error : theme.colors.text} 
-            />
+      <SafeAreaView edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+            <Ionicons name="chevron-back" size={28} color={premiumTheme.light.textPrimary} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={handleShare} style={styles.headerBtn}>
-            <Ionicons name="share-outline" size={24} color={theme.colors.text} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity onPress={handleFavorite} style={styles.headerBtn}>
+              <Ionicons 
+                name={isFavorite ? "heart" : "heart-outline"} 
+                size={24} 
+                color={isFavorite ? premiumTheme.light.error : premiumTheme.light.textPrimary} 
+              />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleShare} style={styles.headerBtn}>
+              <Ionicons name="share-outline" size={24} color={premiumTheme.light.textPrimary} />
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </SafeAreaView>
 
       <ScrollView 
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          {/* Product Header */}
-          <View style={styles.productHeader}>
-            <View style={styles.productImageContainer}>
-              {product.image_url ? (
-                <Image source={{ uri: product.image_url }} style={styles.productImage} />
-              ) : (
-                <Ionicons name="cube-outline" size={48} color={theme.colors.textMuted} />
-              )}
-            </View>
-            <View style={styles.productInfo}>
-              <Text style={styles.productName}>{product.name}</Text>
-              <Text style={styles.productBrand}>{product.brand || 'Marque inconnue'}</Text>
-              <View style={styles.productBadges}>
-                {product.nutri_score && (
-                  <View style={[styles.nutriBadge, { backgroundColor: getNutriScoreColor(product.nutri_score) }]}>
-                    <Text style={styles.nutriBadgeText}>Nutri-Score {product.nutri_score}</Text>
-                  </View>
-                )}
-                {product.nova_group && (
-                  <View style={styles.novaBadge}>
-                    <Text style={styles.novaBadgeText}>NOVA {product.nova_group}</Text>
-                  </View>
-                )}
+        {/* Product Header */}
+        <View style={styles.productHeader}>
+          <View style={styles.productImageContainer}>
+            {product.image_url ? (
+              <Image source={{ uri: product.image_url }} style={styles.productImage} />
+            ) : (
+              <Ionicons name="cube-outline" size={40} color={premiumTheme.light.textTertiary} />
+            )}
+          </View>
+          <Text style={styles.productName}>{product.name}</Text>
+          <Text style={styles.productBrand}>{product.brand || 'Marque inconnue'}</Text>
+        </View>
+
+        {/* Bento Grid */}
+        <View style={styles.bentoContainer}>
+          {/* Row 1: Large Score Card */}
+          <GlassCard 
+            style={[styles.scoreCard, { width: CARD_LARGE, height: 260 }]}
+            animated={true}
+            delay={0}
+          >
+            <ScoreRing3D score={product.health_score || 50} size={180} />
+            <Text style={styles.scoreLabel}>Score Santé</Text>
+          </GlassCard>
+
+          {/* Row 2: Three small cards */}
+          <BentoRow style={{ marginTop: BENTO_GAP }}>
+            <GlassCard 
+              style={[styles.statCard, { width: CARD_SMALL, height: 110 }]}
+              animated={true}
+              delay={80}
+            >
+              <View style={[styles.statIcon, { backgroundColor: '#FF3B30' + '20' }]}>
+                <Ionicons name="cube" size={22} color="#FF3B30" />
               </View>
-            </View>
-          </View>
+              <Text style={[styles.statValue, { color: '#FF3B30' }]}>
+                {product.nutriments?.sugars_100g?.toFixed(0) || '0'}g
+              </Text>
+              <Text style={styles.statLabel}>Sucres</Text>
+            </GlassCard>
 
-          {/* Score Card */}
-          <View style={styles.scoreCard}>
-            <AnimatedScoreGauge 
-              score={product.health_score || 50} 
-              size={180}
-              strokeWidth={14}
-            />
-            <Text style={styles.proTip}>{getProTip(product.health_score)}</Text>
-          </View>
+            <GlassCard 
+              style={[styles.statCard, { width: CARD_SMALL, height: 110 }]}
+              animated={true}
+              delay={160}
+            >
+              <View style={[styles.statIcon, { backgroundColor: '#FF9F0A' + '20' }]}>
+                <Ionicons name="water" size={22} color="#FF9F0A" />
+              </View>
+              <Text style={[styles.statValue, { color: '#FF9F0A' }]}>
+                {product.nutriments?.fat_100g?.toFixed(0) || '0'}g
+              </Text>
+              <Text style={styles.statLabel}>Graisses</Text>
+            </GlassCard>
 
-          {/* Quick Stats */}
-          <View style={styles.statsRow}>
-            <StatCard 
-              icon="leaf" 
-              label="Nutri-Score" 
-              value={product.nutri_score || '?'}
-              color={getNutriScoreColor(product.nutri_score)}
-            />
-            <StatCard 
-              icon="flask" 
-              label="Additifs" 
-              value={String(product.additives?.length || 0)}
-              color={product.additives?.length > 3 ? theme.colors.error : theme.colors.success}
-            />
-            <StatCard 
-              icon="cube" 
-              label="NOVA" 
-              value={String(product.nova_group || '?')}
-              color={product.nova_group > 2 ? theme.colors.warning : theme.colors.success}
-            />
-          </View>
+            <GlassCard 
+              style={[styles.statCard, { width: CARD_SMALL, height: 110 }]}
+              animated={true}
+              delay={240}
+            >
+              <View style={[styles.statIcon, { backgroundColor: '#5856D6' + '20' }]}>
+                <Ionicons name="flask" size={22} color="#5856D6" />
+              </View>
+              <Text style={[styles.statValue, { color: '#5856D6' }]}>
+                {product.additives?.length || 0}
+              </Text>
+              <Text style={styles.statLabel}>Additifs</Text>
+            </GlassCard>
+          </BentoRow>
 
-          {/* Additives */}
+          {/* Row 3: Two medium cards */}
+          <BentoRow style={{ marginTop: BENTO_GAP }}>
+            <GlassCard 
+              style={[styles.badgeCard, { width: CARD_MEDIUM, height: 100 }]}
+              animated={true}
+              delay={320}
+            >
+              <View style={[styles.nutriBadge, { backgroundColor: nutriColor }]}>
+                <Text style={styles.nutriBadgeText}>{product.nutri_score || '?'}</Text>
+              </View>
+              <View style={styles.badgeInfo}>
+                <Text style={styles.badgeTitle}>Nutri-Score</Text>
+                <Text style={styles.badgeSubtitle}>Classification nutritionnelle</Text>
+              </View>
+            </GlassCard>
+
+            <GlassCard 
+              style={[styles.badgeCard, { width: CARD_MEDIUM, height: 100 }]}
+              animated={true}
+              delay={400}
+            >
+              <View style={[styles.novaBadge, { backgroundColor: getNovaColor(product.nova_group) }]}>
+                <Text style={styles.novaBadgeText}>{product.nova_group || '?'}</Text>
+              </View>
+              <View style={styles.badgeInfo}>
+                <Text style={styles.badgeTitle}>NOVA</Text>
+                <Text style={styles.badgeSubtitle}>Transformation</Text>
+              </View>
+            </GlassCard>
+          </BentoRow>
+
+          {/* Additives Section */}
           {product.additives && product.additives.length > 0 && (
-            <View style={styles.section}>
+            <GlassCard 
+              style={[styles.additivesCard, { width: CARD_LARGE, marginTop: BENTO_GAP }]}
+              animated={true}
+              delay={480}
+            >
               <Text style={styles.sectionTitle}>Additifs</Text>
-              {product.additives.map((additive: any, index: number) => (
+              {product.additives.slice(0, 5).map((additive: any, index: number) => (
                 <View key={index} style={styles.additiveItem}>
-                  <View style={[styles.additiveRisk, { backgroundColor: getAdditiveColor(additive.risk) }]} />
-                  <View style={styles.additiveInfo}>
-                    <Text style={styles.additiveName}>{additive.name || additive.code}</Text>
-                    <Text style={styles.additiveDescription}>{additive.description || getRiskText(additive.risk)}</Text>
-                  </View>
-                  <View style={[styles.additiveRiskBadge, { backgroundColor: getAdditiveColor(additive.risk) + '20' }]}>
-                    <Text style={[styles.additiveRiskText, { color: getAdditiveColor(additive.risk) }]}>
+                  <View style={[styles.additiveRisk, { backgroundColor: getAdditiveRiskColor(additive.risk) }]} />
+                  <Text style={styles.additiveName}>{additive.name || additive.code}</Text>
+                  <View style={[styles.riskBadge, { backgroundColor: getAdditiveRiskColor(additive.risk) + '20' }]}>
+                    <Text style={[styles.riskText, { color: getAdditiveRiskColor(additive.risk) }]}>
                       {getRiskLabel(additive.risk)}
                     </Text>
                   </View>
                 </View>
               ))}
-            </View>
+            </GlassCard>
           )}
 
-          {/* Alternatives */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Alternatives plus saines</Text>
-              {loadingAlternatives && <ActivityIndicator size="small" color={theme.colors.primary} />}
-            </View>
-            
-            {alternatives.length === 0 && !loadingAlternatives ? (
-              <View style={styles.noAlternatives}>
-                <Ionicons name="checkmark-circle" size={40} color={theme.colors.success} />
-                <Text style={styles.noAlternativesText}>
-                  Ce produit est déjà un bon choix !
-                </Text>
-              </View>
-            ) : (
-              alternatives.slice(0, 5).map((alt, index) => (
-                <AlternativeCard 
-                  key={index} 
-                  alternative={alt} 
-                  currentScore={product.health_score}
+          {/* Alternatives Section */}
+          {alternatives.length > 0 && (
+            <View style={{ marginTop: BENTO_GAP }}>
+              <Text style={styles.altSectionTitle}>Alternatives plus saines</Text>
+              {alternatives.slice(0, 4).map((alt, index) => (
+                <GlassCard 
+                  key={index}
+                  style={[styles.alternativeCard, { width: CARD_LARGE, marginBottom: BENTO_GAP }]}
                   onPress={() => router.push({ pathname: '/product', params: { barcode: alt.barcode } })}
-                />
-              ))
-            )}
-          </View>
-        </Animated.View>
+                  animated={true}
+                  delay={560 + index * 80}
+                >
+                  <View style={styles.altContent}>
+                    <View style={styles.altImageContainer}>
+                      {alt.image_url ? (
+                        <Image source={{ uri: alt.image_url }} style={styles.altImage} />
+                      ) : (
+                        <Ionicons name="leaf" size={24} color={premiumTheme.light.primary} />
+                      )}
+                    </View>
+                    <View style={styles.altInfo}>
+                      <Text style={styles.altName} numberOfLines={1}>{alt.name}</Text>
+                      <Text style={styles.altBrand}>{alt.brand || ''}</Text>
+                      <View style={styles.scoreGain}>
+                        <Ionicons name="trending-up" size={14} color={premiumTheme.light.success} />
+                        <Text style={styles.scoreGainText}>
+                          +{Math.max(0, (alt.health_score || 0) - (product.health_score || 0))} pts
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.altScore, { backgroundColor: getScoreColor(alt.health_score) }]}>
+                      <Text style={styles.altScoreText}>{alt.health_score}</Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.buyButton}
+                    onPress={() => Linking.openURL(`https://www.google.com/search?q=${encodeURIComponent(alt.name + ' acheter')}`)}
+                  >
+                    <Ionicons name="cart" size={16} color="#FFF" />
+                    <Text style={styles.buyText}>Acheter</Text>
+                  </TouchableOpacity>
+                </GlassCard>
+              ))}
+            </View>
+          )}
+        </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
-// Stat Card Component
-const StatCard = ({ icon, label, value, color }: any) => (
-  <View style={styles.statCard}>
-    <View style={[styles.statIcon, { backgroundColor: color + '20' }]}>
-      <Ionicons name={icon} size={20} color={color} />
-    </View>
-    <Text style={[styles.statValue, { color }]}>{value}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
-  </View>
-);
-
-// Alternative Card Component
-const AlternativeCard = ({ alternative, currentScore, onPress }: any) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const scoreGain = Math.max(0, (alternative.health_score || 0) - (currentScore || 0));
-
-  const handleBuy = () => {
-    const query = encodeURIComponent(`${alternative.name} ${alternative.brand || ''} acheter`);
-    Linking.openURL(`https://www.google.com/search?q=${query}`);
-  };
-
-  return (
-    <Animated.View style={[styles.alternativeCard, { transform: [{ scale: scaleAnim }] }]}>
-      <TouchableOpacity
-        style={styles.alternativeContent}
-        onPress={onPress}
-        onPressIn={() => Animated.spring(scaleAnim, { toValue: 0.98, useNativeDriver: true }).start()}
-        onPressOut={() => Animated.spring(scaleAnim, { toValue: 1, useNativeDriver: true }).start()}
-        activeOpacity={1}
-      >
-        <View style={styles.alternativeImageContainer}>
-          {alternative.image_url ? (
-            <Image source={{ uri: alternative.image_url }} style={styles.alternativeImage} />
-          ) : (
-            <Ionicons name="leaf" size={24} color={theme.colors.primary} />
-          )}
-        </View>
-        
-        <View style={styles.alternativeInfo}>
-          <Text style={styles.alternativeName} numberOfLines={1}>{alternative.name}</Text>
-          <Text style={styles.alternativeBrand} numberOfLines={1}>{alternative.brand || ''}</Text>
-          {scoreGain > 0 && (
-            <View style={styles.scoreGain}>
-              <Ionicons name="arrow-up" size={12} color={theme.colors.success} />
-              <Text style={styles.scoreGainText}>+{scoreGain} pts</Text>
-            </View>
-          )}
-        </View>
-        
-        <View style={[styles.alternativeScore, { backgroundColor: getScoreGradient(alternative.health_score) }]}>
-          <Text style={styles.alternativeScoreText}>{alternative.health_score}</Text>
-        </View>
-      </TouchableOpacity>
-      
-      <TouchableOpacity style={styles.buyButton} onPress={handleBuy}>
-        <Ionicons name="cart" size={14} color="#FFF" />
-        <Text style={styles.buyButtonText}>Acheter</Text>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-};
-
 // Helper functions
-const getProTip = (score: number): string => {
-  if (score >= 80) return "🌟 Excellent choix ! Ce produit est très bon pour la santé.";
-  if (score >= 60) return "👍 Bon produit, consommable régulièrement.";
-  if (score >= 45) return "⚠️ À consommer avec modération.";
-  if (score >= 30) return "🔶 Privilégiez des alternatives plus saines.";
-  return "🚫 Produit à éviter. Consultez nos alternatives.";
+const getNovaColor = (nova: number): string => {
+  switch (nova) {
+    case 1: return '#34C759';
+    case 2: return '#FFD60A';
+    case 3: return '#FF9F0A';
+    case 4: return '#FF3B30';
+    default: return '#8E8E93';
+  }
 };
 
 const getRiskLabel = (risk: string): string => {
@@ -333,43 +322,33 @@ const getRiskLabel = (risk: string): string => {
     case 'low': return 'Faible';
     case 'medium': return 'Modéré';
     case 'high': return 'Élevé';
-    default: return 'Inconnu';
-  }
-};
-
-const getRiskText = (risk: string): string => {
-  switch (risk?.toLowerCase()) {
-    case 'low': return 'Risque faible pour la santé';
-    case 'medium': return 'À consommer avec modération';
-    case 'high': return 'Éviter une consommation régulière';
-    default: return 'Risque non évalué';
+    default: return '?';
   }
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.backgroundSecondary,
+    backgroundColor: premiumTheme.light.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: premiumTheme.light.textSecondary,
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: theme.colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   headerBtn: {
     padding: 8,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: theme.colors.text,
-    flex: 1,
-    textAlign: 'center',
   },
   headerActions: {
     flexDirection: 'row',
@@ -378,99 +357,59 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
+    paddingHorizontal: PADDING,
   },
   productHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 24,
   },
   productImageContainer: {
     width: 100,
     height: 100,
-    borderRadius: theme.radius.lg,
-    backgroundColor: theme.colors.surface,
+    borderRadius: 24,
+    backgroundColor: premiumTheme.light.glass,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
-    ...theme.shadows.card,
+    marginBottom: 16,
+    ...premiumTheme.shadows.glass,
   },
   productImage: {
     width: 100,
     height: 100,
     resizeMode: 'contain',
   },
-  productInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
   productName: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: theme.colors.text,
+    fontSize: 28,
+    fontWeight: '700',
+    color: premiumTheme.light.textPrimary,
+    textAlign: 'center',
     letterSpacing: -0.5,
-    marginBottom: 4,
   },
   productBrand: {
-    fontSize: 15,
-    color: theme.colors.textSecondary,
-    marginBottom: 12,
+    fontSize: 16,
+    color: premiumTheme.light.textSecondary,
+    marginTop: 4,
   },
-  productBadges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  nutriBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  nutriBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFF',
-  },
-  novaBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: theme.colors.backgroundSecondary,
-  },
-  novaBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: theme.colors.textSecondary,
+  bentoContainer: {
+    marginTop: 8,
   },
   scoreCard: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.xl,
-    padding: 24,
     alignItems: 'center',
-    marginBottom: 20,
-    ...theme.shadows.card,
+    justifyContent: 'center',
+    paddingVertical: 24,
   },
-  proTip: {
+  scoreLabel: {
     fontSize: 14,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 16,
-    lineHeight: 20,
-    paddingHorizontal: 16,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 20,
+    fontWeight: '500',
+    color: premiumTheme.light.textSecondary,
+    marginTop: 12,
+    letterSpacing: 0.5,
   },
   statCard: {
-    flex: 1,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.lg,
-    padding: 16,
     alignItems: 'center',
-    marginHorizontal: 4,
-    ...theme.shadows.card,
+    justifyContent: 'center',
+    padding: 12,
   },
   statIcon: {
     width: 40,
@@ -482,133 +421,157 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 22,
-    fontWeight: '800',
+    fontWeight: '700',
+    letterSpacing: -0.5,
   },
   statLabel: {
     fontSize: 11,
-    color: theme.colors.textSecondary,
+    fontWeight: '500',
+    color: premiumTheme.light.textSecondary,
     marginTop: 4,
+    letterSpacing: 0.3,
   },
-  section: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.xl,
-    padding: 20,
-    marginBottom: 20,
-    ...theme.shadows.card,
-  },
-  sectionHeader: {
+  badgeCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    padding: 16,
+  },
+  nutriBadge: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  nutriBadgeText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  novaBadge: {
+    width: 50,
+    height: 50,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  novaBadgeText: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#FFF',
+  },
+  badgeInfo: {
+    marginLeft: 14,
+    flex: 1,
+  },
+  badgeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: premiumTheme.light.textPrimary,
+  },
+  badgeSubtitle: {
+    fontSize: 12,
+    color: premiumTheme.light.textSecondary,
+    marginTop: 2,
+  },
+  additivesCard: {
+    padding: 20,
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: theme.colors.text,
+    color: premiumTheme.light.textPrimary,
+    marginBottom: 16,
+    letterSpacing: -0.3,
   },
   additiveItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
+    borderBottomColor: premiumTheme.light.glassBorder,
   },
   additiveRisk: {
     width: 4,
-    height: 36,
+    height: 30,
     borderRadius: 2,
     marginRight: 12,
   },
-  additiveInfo: {
-    flex: 1,
-  },
   additiveName: {
+    flex: 1,
     fontSize: 15,
-    fontWeight: '600',
-    color: theme.colors.text,
+    color: premiumTheme.light.textPrimary,
   },
-  additiveDescription: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  additiveRiskBadge: {
+  riskBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 10,
+    borderRadius: 8,
   },
-  additiveRiskText: {
+  riskText: {
     fontSize: 11,
     fontWeight: '600',
   },
-  noAlternatives: {
-    alignItems: 'center',
-    paddingVertical: 24,
-  },
-  noAlternativesText: {
-    fontSize: 15,
-    color: theme.colors.textSecondary,
-    marginTop: 12,
-    textAlign: 'center',
+  altSectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: premiumTheme.light.textPrimary,
+    marginBottom: 16,
+    letterSpacing: -0.3,
   },
   alternativeCard: {
-    marginBottom: 12,
+    padding: 16,
   },
-  alternativeContent: {
+  altContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.borderLight,
   },
-  alternativeImageContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: theme.colors.backgroundSecondary,
+  altImageContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: premiumTheme.light.backgroundSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
   },
-  alternativeImage: {
-    width: 52,
-    height: 52,
+  altImage: {
+    width: 56,
+    height: 56,
     resizeMode: 'contain',
   },
-  alternativeInfo: {
+  altInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 14,
   },
-  alternativeName: {
-    fontSize: 15,
+  altName: {
+    fontSize: 16,
     fontWeight: '600',
-    color: theme.colors.text,
+    color: premiumTheme.light.textPrimary,
   },
-  alternativeBrand: {
+  altBrand: {
     fontSize: 13,
-    color: theme.colors.textSecondary,
+    color: premiumTheme.light.textSecondary,
   },
   scoreGain: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   scoreGainText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
-    color: theme.colors.success,
+    color: premiumTheme.light.success,
     marginLeft: 4,
   },
-  alternativeScore: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  altScore: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  alternativeScoreText: {
-    fontSize: 14,
+  altScoreText: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#FFF',
   },
@@ -616,14 +579,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: theme.colors.warning,
+    backgroundColor: '#FF9F0A',
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 20,
+    borderRadius: 12,
     alignSelf: 'flex-end',
-    marginTop: 8,
+    marginTop: 12,
   },
-  buyButtonText: {
+  buyText: {
     color: '#FFF',
     fontSize: 14,
     fontWeight: '600',
