@@ -1954,6 +1954,7 @@ export default function NutriScanApp() {
       return (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Initialisation de la caméra...</Text>
         </View>
       );
     }
@@ -1979,7 +1980,8 @@ export default function NutriScanApp() {
         <CameraView
           style={StyleSheet.absoluteFillObject}
           facing="back"
-          barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39'] }}
+          barcodeScannerEnabled={true}
+          barcodeScannerSettings={{ barcodeTypes: ['ean13', 'ean8', 'upc_a', 'upc_e', 'code128', 'code39', 'qr'] }}
           onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
         />
         <View style={styles.scannerOverlay}>
@@ -1996,9 +1998,18 @@ export default function NutriScanApp() {
           </View>
           <View style={styles.scannerOverlayBottom}>
             <Text style={styles.scannerHint}>Positionnez le code-barres dans le cadre</Text>
+            {scanned && (
+              <TouchableOpacity 
+                style={styles.scanAgainButton} 
+                onPress={() => { setScanned(false); setIsFetching(false); }}
+              >
+                <Ionicons name="refresh" size={20} color="#FFF" />
+                <Text style={styles.scanAgainText}>Scanner un autre produit</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
-        {loading && (
+        {(loading || productLoading) && (
           <View style={styles.scannerLoading}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.scannerLoadingText}>Analyse en cours...</Text>
@@ -2598,6 +2609,8 @@ const styles = StyleSheet.create({
   scannerHint: { color: '#FFF', fontSize: 16 },
   scannerLoading: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' },
   scannerLoadingText: { color: '#FFF', fontSize: 16, marginTop: 16 },
+  scanAgainButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, marginTop: 20 },
+  scanAgainText: { color: '#FFF', fontSize: 14, fontWeight: '600', marginLeft: 8 },
   closeButton: { position: 'absolute', top: 50, right: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
 
   // Permission

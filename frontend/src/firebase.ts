@@ -13,8 +13,11 @@ import {
   sendPasswordResetEmail,
   User,
   initializeAuth,
-  browserLocalPersistence
+  browserLocalPersistence,
+  getReactNativePersistence
 } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -30,16 +33,19 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth with persistence
+// Initialize Auth with proper persistence for each platform
 let auth: any;
 try {
-  // Check if we're in a browser environment
-  if (typeof window !== 'undefined') {
+  if (Platform.OS === 'web') {
+    // Web: use browser local persistence
     auth = initializeAuth(app, {
       persistence: browserLocalPersistence
     });
   } else {
-    auth = getAuth(app);
+    // Mobile (iOS/Android): use React Native AsyncStorage persistence
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
   }
 } catch (e) {
   // If already initialized, get the existing instance
