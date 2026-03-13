@@ -1,38 +1,80 @@
-// Home Tab Screen
-import React, { useState } from 'react';
+// Home Screen - Premium Redesign
+import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  RefreshControl,
   Image,
-  Modal,
+  RefreshControl,
+  Animated,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useAuth } from '../../src/contexts/AuthContext';
 import { useApp } from '../../src/contexts/AppContext';
-import { colors, getScoreColor } from '../../src/styles/colors';
-import { ProductCard, HealingFoodCard } from '../../src/components';
-import { HealingFood } from '../../src/types';
+import { theme, getScoreGradient } from '../../src/styles/theme';
+import { ProductCardSkeleton } from '../../src/components/SkeletonLoader';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { history, healingFoods, recommendations, refreshing, onRefresh, fetchProduct } = useApp();
-  const [selectedHealingFood, setSelectedHealingFood] = useState<HealingFood | null>(null);
-  const [showHealingFoodModal, setShowHealingFoodModal] = useState(false);
+  const { scanHistory, healingFoods, fetchProduct, refreshData, loading } = useApp();
+  const [refreshing, setRefreshing] = useState(false);
+  
+  const scanButtonScale = useRef(new Animated.Value(1)).current;
+  const headerOpacity = useRef(new Animated.Value(0)).current;
 
-  const openScanner = () => {
+  useEffect(() => {
+    Animated.timing(headerOpacity, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refreshData();
+    setRefreshing(false);
+  };
+
+  const handleScanPress = async () => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    }
     router.push('/scanner');
   };
 
   const handleProductPress = async (barcode: string) => {
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     await fetchProduct(barcode);
     router.push('/product');
+  };
+
+  const handleScanButtonPressIn = () => {
+    Animated.spring(scanButtonScale, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      speed: 50,
+    }).start();
+  };
+
+  const handleScanButtonPressOut = () => {
+    Animated.spring(scanButtonScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+    }).start();
   };
 
   return (
@@ -40,221 +82,505 @@ export default function HomeScreen() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.primary]} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+          />
         }
       >
-        {/* Hero */}
-        <View style={styles.heroSection}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="leaf" size={48} color={colors.primary} />
+        {/* Header */}
+        <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
+          <View>
+            <Text style={styles.greeting}>
+              {getGreeting()}, {user?.email?.split('@')[0] || 'vous'} 👋
+            </Text>
+            <Text style={styles.subtitle}>Scannez pour manger mieux</Text>
           </View>
-          <Text style={styles.title}>NutriScan</Text>
-          <Text style={styles.subtitle}>Scannez. Analysez. Mangez mieux.</Text>
+          <TouchableOpacity 
+            style={styles.coachButton}
+            onPress={() => router.push('/coach')}
+          >
+            <View style={styles.coachIcon}>
+              <Ionicons name="chatbubble-ellipses" size={20} color="#FFF" />
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Scan Button - Hero */}
+        <Animated.View style={{ transform: [{ scale: scanButtonScale }] }}>
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={handleScanPress}
+            onPressIn={handleScanButtonPressIn}
+            onPressOut={handleScanButtonPressOut}
+            activeOpacity={1}
+          >
+            <View style={styles.scanButtonInner}>
+              <View style={styles.scanIconContainer}>
+                <Ionicons name="scan" size={32} color="#FFF" />
+              </View>
+              <View style={styles.scanTextContainer}>
+                <Text style={styles.scanButtonTitle}>Scanner un produit</Text>
+                <Text style={styles.scanButtonSubtitle}>Découvrez son score santé</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="rgba(255,255,255,0.7)" />
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Quick Actions */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => router.push('/compare')}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#E3F2FD' }]}>
+              <Ionicons name="git-compare" size={20} color="#1976D2" />
+            </View>
+            <Text style={styles.quickActionText}>Comparer</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => router.push('/fridge-score')}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#F3E5F5' }]}>
+              <Text style={{ fontSize: 20 }}>🧊</Text>
+            </View>
+            <Text style={styles.quickActionText}>Mon Frigo</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => router.push('/preferences')}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#FFF3E0' }]}>
+              <Ionicons name="settings" size={20} color="#FF9800" />
+            </View>
+            <Text style={styles.quickActionText}>Préférences</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickAction}
+            onPress={() => router.push('/premium')}
+          >
+            <View style={[styles.quickActionIcon, { backgroundColor: '#FFF8E1' }]}>
+              <Ionicons name="diamond" size={20} color="#FFB300" />
+            </View>
+            <Text style={styles.quickActionText}>Premium</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Scan Button */}
-        <TouchableOpacity style={styles.scanButton} onPress={openScanner} activeOpacity={0.8}>
-          <View style={styles.scanButtonInner}>
-            <Ionicons name="barcode-outline" size={32} color="#FFF" />
-            <Text style={styles.scanButtonText}>Scanner un produit</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Compare Button */}
-        <TouchableOpacity style={styles.compareButton} onPress={() => router.push('/compare')} activeOpacity={0.8}>
-          <View style={styles.compareButtonInner}>
-            <Ionicons name="git-compare-outline" size={24} color={colors.primary} />
-            <Text style={styles.compareButtonText}>Comparer deux produits</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Fridge Score Button - VIRAL FEATURE */}
-        <TouchableOpacity 
-          style={styles.fridgeScoreButton} 
-          onPress={() => router.push('/fridge-score')} 
-          activeOpacity={0.8}
-        >
-          <View style={styles.fridgeScoreInner}>
-            <Text style={styles.fridgeEmoji}>🧊</Text>
-            <View style={styles.fridgeTextContainer}>
-              <Text style={styles.fridgeTitle}>Score de mon Frigo</Text>
-              <Text style={styles.fridgeSubtitle}>Découvre ton score et partage-le !</Text>
-            </View>
-            <Ionicons name="share-social" size={22} color="#FFF" />
-          </View>
-        </TouchableOpacity>
-
         {/* Recent Scans */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Scans récents</Text>
-          {history.length === 0 ? (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Scans récents</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/history')}>
+              <Text style={styles.seeAll}>Voir tout</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {loading ? (
+            <>
+              <ProductCardSkeleton />
+              <ProductCardSkeleton />
+            </>
+          ) : !scanHistory || scanHistory.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="time-outline" size={48} color={colors.textSecondary} />
-              <Text style={styles.emptyStateText}>Aucun scan récent</Text>
+              <Ionicons name="scan-outline" size={48} color={theme.colors.textMuted} />
+              <Text style={styles.emptyText}>Aucun produit scanné</Text>
+              <Text style={styles.emptySubtext}>Scannez votre premier produit !</Text>
             </View>
           ) : (
-            history.slice(0, 5).map((item) => (
-              <ProductCard
-                key={item.id}
-                barcode={item.barcode}
-                name={item.product_name}
-                brand={item.brand}
-                imageUrl={item.image_url}
-                healthScore={item.health_score}
+            scanHistory.slice(0, 5).map((item, index) => (
+              <ProductCard 
+                key={`${item.barcode}-${index}`}
+                product={item}
                 onPress={() => handleProductPress(item.barcode)}
+                index={index}
               />
             ))
           )}
         </View>
 
-        {/* Recommendations */}
-        {recommendations.length > 0 && (
-          <View style={styles.sectionContainer}>
-            <Text style={styles.sectionTitle}>Recommandations pour vous</Text>
-            <Text style={styles.sectionSubtitle}>Alternatives plus saines à vos produits habituels</Text>
-            {recommendations.slice(0, 3).map((rec, index) => (
-              <ProductCard
-                key={index}
-                barcode={rec.barcode}
-                name={rec.name}
-                brand={rec.replaces ? `Remplace: ${rec.replaces}` : rec.brand}
-                imageUrl={rec.image_url}
-                healthScore={rec.health_score}
-                onPress={() => handleProductPress(rec.barcode)}
-              />
-            ))}
+        {/* Healing Foods */}
+        {healingFoods && healingFoods.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Aliments bienfaisants</Text>
+              <View style={styles.badge}>
+                <Ionicons name="leaf" size={12} color="#FFF" />
+              </View>
+            </View>
+            
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalScroll}
+            >
+              {healingFoods.slice(0, 8).map((food, index) => (
+                <HealingFoodCard 
+                  key={index} 
+                  food={food} 
+                  onPress={() => handleProductPress(food.barcode)}
+                />
+              ))}
+            </ScrollView>
           </View>
         )}
 
-        {/* Healing Foods */}
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Aliments naturels bienfaisants</Text>
-          <Text style={styles.sectionSubtitle}>Aliments validés par la science pour votre santé</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.healingFoodsScroll}>
-            {healingFoods.map((food, index) => (
-              <HealingFoodCard
-                key={index}
-                food={food}
-                onPress={() => {
-                  setSelectedHealingFood(food);
-                  setShowHealingFoodModal(true);
-                }}
-              />
-            ))}
-          </ScrollView>
-        </View>
+        <View style={{ height: 100 }} />
       </ScrollView>
-
-      {/* Healing Food Modal */}
-      <Modal visible={showHealingFoodModal} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <View style={styles.healingFoodModalTitleContainer}>
-                <Text style={styles.healingFoodModalEmoji}>{selectedHealingFood?.image}</Text>
-                <Text style={styles.modalTitle}>{selectedHealingFood?.name}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowHealingFoodModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalBody}>
-              {/* Benefits */}
-              <View style={styles.healingFoodSection}>
-                <View style={styles.healingFoodSectionHeader}>
-                  <Ionicons name="sparkles" size={20} color={colors.primary} />
-                  <Text style={styles.healingFoodSectionTitle}>Bienfaits</Text>
-                </View>
-                <View style={styles.healingFoodTagsContainer}>
-                  {selectedHealingFood?.benefits.map((benefit, index) => (
-                    <View key={index} style={styles.benefitTag}>
-                      <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                      <Text style={styles.benefitText}>{benefit}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Conditions */}
-              <View style={styles.healingFoodSection}>
-                <View style={styles.healingFoodSectionHeader}>
-                  <Ionicons name="medical" size={20} color={colors.warning} />
-                  <Text style={styles.healingFoodSectionTitle}>Peut aider pour</Text>
-                </View>
-                <View style={styles.healingFoodTagsContainer}>
-                  {selectedHealingFood?.conditions.map((condition, index) => (
-                    <View key={index} style={styles.conditionTag}>
-                      <Text style={styles.conditionText}>{condition}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-
-              {/* Source */}
-              <View style={styles.sourceSection}>
-                <Ionicons name="document-text" size={16} color={colors.textSecondary} />
-                <Text style={styles.sourceText}>Source: {selectedHealingFood?.source}</Text>
-              </View>
-
-              {/* Disclaimer */}
-              <View style={styles.disclaimer}>
-                <Ionicons name="information-circle" size={20} color={colors.textSecondary} />
-                <Text style={styles.disclaimerText}>
-                  Ces informations sont à titre informatif et ne remplacent pas un avis médical.
-                </Text>
-              </View>
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
 
+// Product Card Component
+const ProductCard = ({ product, onPress, index }: any) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
+  const scaleValue = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.timing(animatedValue, {
+      toValue: 1,
+      duration: 400,
+      delay: index * 100,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const scoreColor = getScoreGradient(product.health_score || 50);
+
+  return (
+    <Animated.View style={[
+      styles.productCard,
+      {
+        opacity: animatedValue,
+        transform: [
+          { translateY: animatedValue.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) },
+          { scale: scaleValue }
+        ]
+      }
+    ]}>
+      <TouchableOpacity 
+        style={styles.productCardInner}
+        onPress={onPress}
+        onPressIn={() => {
+          Animated.spring(scaleValue, { toValue: 0.98, useNativeDriver: true }).start();
+        }}
+        onPressOut={() => {
+          Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true }).start();
+        }}
+        activeOpacity={1}
+      >
+        <View style={styles.productImageContainer}>
+          {product.image_url ? (
+            <Image source={{ uri: product.image_url }} style={styles.productImage} />
+          ) : (
+            <Ionicons name="cube-outline" size={24} color={theme.colors.textMuted} />
+          )}
+        </View>
+        
+        <View style={styles.productInfo}>
+          <Text style={styles.productName} numberOfLines={1}>{product.product_name}</Text>
+          <Text style={styles.productBrand} numberOfLines={1}>{product.brand || 'Marque inconnue'}</Text>
+        </View>
+        
+        <View style={[styles.scoreCircle, { backgroundColor: scoreColor }]}>
+          <Text style={styles.scoreText}>{product.health_score || '--'}</Text>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+// Healing Food Card
+const HealingFoodCard = ({ food, onPress }: any) => {
+  const scaleValue = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={{ transform: [{ scale: scaleValue }] }}>
+      <TouchableOpacity
+        style={styles.healingCard}
+        onPress={onPress}
+        onPressIn={() => {
+          Animated.spring(scaleValue, { toValue: 0.95, useNativeDriver: true }).start();
+        }}
+        onPressOut={() => {
+          Animated.spring(scaleValue, { toValue: 1, useNativeDriver: true }).start();
+        }}
+        activeOpacity={1}
+      >
+        {food.image_url ? (
+          <Image source={{ uri: food.image_url }} style={styles.healingImage} />
+        ) : (
+          <View style={styles.healingPlaceholder}>
+            <Ionicons name="leaf" size={30} color={theme.colors.primary} />
+          </View>
+        )}
+        <View style={styles.healingInfo}>
+          <Text style={styles.healingName} numberOfLines={2}>{food.name}</Text>
+          <View style={[styles.healingScore, { backgroundColor: getScoreGradient(food.health_score) }]}>
+            <Text style={styles.healingScoreText}>{food.health_score}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+// Helper function
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Bonjour';
+  if (hour < 18) return 'Bon après-midi';
+  return 'Bonsoir';
+};
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollView: { flex: 1 },
-  scrollContent: { padding: 16, paddingBottom: 100 },
-  heroSection: { alignItems: 'center', marginBottom: 24, paddingTop: 16 },
-  logoContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 28, fontWeight: '700', color: colors.text, marginBottom: 4 },
-  subtitle: { fontSize: 14, color: colors.textSecondary },
-  scanButton: { marginBottom: 12 },
-  scanButtonInner: { backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16 },
-  scanButtonText: { color: '#FFF', fontSize: 18, fontWeight: '600', marginLeft: 12 },
-  compareButton: { marginBottom: 12 },
-  compareButtonInner: { backgroundColor: colors.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.primary },
-  compareButtonText: { color: colors.primary, fontSize: 16, fontWeight: '600', marginLeft: 8 },
-  fridgeScoreButton: { marginBottom: 24 },
-  fridgeScoreInner: { backgroundColor: '#667eea', flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16, borderRadius: 16 },
-  fridgeEmoji: { fontSize: 32 },
-  fridgeTextContainer: { flex: 1, marginLeft: 12 },
-  fridgeTitle: { fontSize: 16, fontWeight: '700', color: '#FFF' },
-  fridgeSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.8)', marginTop: 2 },
-  sectionContainer: { marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 8 },
-  sectionSubtitle: { fontSize: 12, color: colors.textSecondary, marginBottom: 12, marginTop: -4 },
-  emptyState: { alignItems: 'center', paddingVertical: 32, backgroundColor: colors.surface, borderRadius: 16 },
-  emptyStateText: { fontSize: 16, fontWeight: '500', color: colors.textSecondary, marginTop: 12 },
-  healingFoodsScroll: { marginHorizontal: -16, paddingHorizontal: 16 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.surface },
-  modalTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
-  modalBody: { padding: 20 },
-  healingFoodModalTitleContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  healingFoodModalEmoji: { fontSize: 28, marginRight: 12 },
-  healingFoodSection: { marginBottom: 24 },
-  healingFoodSectionHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  healingFoodSectionTitle: { fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 8 },
-  healingFoodTagsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  benefitTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20 },
-  benefitText: { fontSize: 14, color: colors.text, marginLeft: 6, fontWeight: '500' },
-  conditionTag: { backgroundColor: '#FFF3E0', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: colors.warning },
-  conditionText: { fontSize: 14, color: colors.warning, fontWeight: '500' },
-  sourceSection: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.surface },
-  sourceText: { fontSize: 13, color: colors.textSecondary, marginLeft: 8, fontStyle: 'italic' },
-  disclaimer: { flexDirection: 'row', backgroundColor: colors.surface, padding: 12, borderRadius: 12, marginBottom: 20 },
-  disclaimerText: { fontSize: 12, color: colors.textSecondary, marginLeft: 8, flex: 1, lineHeight: 18 },
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.backgroundSecondary,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  greeting: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: theme.colors.text,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 15,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
+  },
+  coachButton: {
+    padding: 4,
+  },
+  coachIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#9C27B0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadows.md,
+  },
+  scanButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.radius.xl,
+    marginBottom: 20,
+    ...theme.shadows.lg,
+  },
+  scanButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+  },
+  scanIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanTextContainer: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  scanButtonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  scanButtonSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 28,
+  },
+  quickAction: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  quickActionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    ...theme.shadows.sm,
+  },
+  quickActionText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+  },
+  section: {
+    marginBottom: 28,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: -0.3,
+  },
+  seeAll: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  badge: {
+    backgroundColor: theme.colors.primary,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyState: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.xl,
+    padding: 40,
+    alignItems: 'center',
+    ...theme.shadows.card,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    marginTop: 4,
+  },
+  productCard: {
+    marginBottom: 12,
+  },
+  productCardInner: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    ...theme.shadows.card,
+  },
+  productImageContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: theme.colors.backgroundSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  productImage: {
+    width: 56,
+    height: 56,
+    resizeMode: 'contain',
+  },
+  productInfo: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  productName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  productBrand: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+  },
+  scoreCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...theme.shadows.sm,
+  },
+  scoreText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  horizontalScroll: {
+    paddingRight: 20,
+  },
+  healingCard: {
+    width: 140,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.lg,
+    marginRight: 12,
+    overflow: 'hidden',
+    ...theme.shadows.card,
+  },
+  healingImage: {
+    width: '100%',
+    height: 100,
+    resizeMode: 'cover',
+  },
+  healingPlaceholder: {
+    width: '100%',
+    height: 100,
+    backgroundColor: theme.colors.backgroundSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  healingInfo: {
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  healingName: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.colors.text,
+  },
+  healingScore: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  healingScoreText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
+  },
 });
