@@ -1847,15 +1847,14 @@ from fastapi import UploadFile, File
 
 @api_router.post("/transcribe")
 async def transcribe_audio(audio: UploadFile = File(...)):
-    """Transcribe audio to text using OpenAI Whisper"""
+    """Transcribe audio to text using OpenAI Whisper via Emergent"""
     import tempfile
     import os
-    import base64
     
     temp_path = None
     
     try:
-        # Read raw bytes from the upload - use SpooledTemporaryFile to handle binary properly
+        # Read raw bytes from the upload
         audio_bytes = await audio.read()
         
         if len(audio_bytes) < 100:
@@ -1871,14 +1870,15 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         
         logger.info(f"Saved audio to {temp_path}")
         
-        # Send to OpenAI Whisper API
+        # Use Emergent LLM endpoint for Whisper
         async with httpx.AsyncClient(timeout=120.0) as http_client:
             with open(temp_path, "rb") as f:
                 files = {"file": ("recording.m4a", f, "audio/mp4")}
                 data = {"model": "whisper-1", "language": "fr"}
                 
+                # Try Emergent endpoint first
                 response = await http_client.post(
-                    "https://api.openai.com/v1/audio/transcriptions",
+                    "https://llm.emergentagi.com/v1/audio/transcriptions",
                     headers={"Authorization": f"Bearer {EMERGENT_LLM_KEY}"},
                     files=files,
                     data=data
@@ -1889,7 +1889,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
                 if response.status_code == 200:
                     result = response.json()
                     text = result.get("text", "").strip()
-                    logger.info(f"Transcription OK: '{text[:80]}...'")
+                    logger.info(f"Transcription OK: '{text[:80] if text else 'empty'}...'")
                     return {"text": text, "success": bool(text)}
                 else:
                     error_msg = response.text[:300]
