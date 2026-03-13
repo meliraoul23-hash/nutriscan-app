@@ -23,6 +23,7 @@ export default function RootLayout() {
             <Stack.Screen name="goals" options={{ headerShown: false }} />
             <Stack.Screen name="exercises" options={{ headerShown: false }} />
             <Stack.Screen name="favorites" options={{ headerShown: false }} />
+            <Stack.Screen name="compare" options={{ headerShown: false }} />
           </Stack>
         </AppProvider>
       </AuthProvider>

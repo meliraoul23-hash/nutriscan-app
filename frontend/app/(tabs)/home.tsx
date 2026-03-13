@@ -61,6 +61,14 @@ export default function HomeScreen() {
           </View>
         </TouchableOpacity>
 
+        {/* Compare Button */}
+        <TouchableOpacity style={styles.compareButton} onPress={() => router.push('/compare')} activeOpacity={0.8}>
+          <View style={styles.compareButtonInner}>
+            <Ionicons name="git-compare-outline" size={24} color={colors.primary} />
+            <Text style={styles.compareButtonText}>Comparer deux produits</Text>
+          </View>
+        </TouchableOpacity>
+
         {/* Recent Scans */}
         <View style={styles.sectionContainer}>
           <Text style={styles.sectionTitle}>Scans récents</Text>
@@ -196,9 +204,12 @@ const styles = StyleSheet.create({
   logoContainer: { width: 80, height: 80, borderRadius: 40, backgroundColor: colors.surfaceAlt, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   title: { fontSize: 28, fontWeight: '700', color: colors.text, marginBottom: 4 },
   subtitle: { fontSize: 14, color: colors.textSecondary },
-  scanButton: { marginBottom: 24 },
+  scanButton: { marginBottom: 12 },
   scanButtonInner: { backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 16 },
   scanButtonText: { color: '#FFF', fontSize: 18, fontWeight: '600', marginLeft: 12 },
+  compareButton: { marginBottom: 24 },
+  compareButtonInner: { backgroundColor: colors.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.primary },
+  compareButtonText: { color: colors.primary, fontSize: 16, fontWeight: '600', marginLeft: 8 },
   sectionContainer: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginBottom: 8 },
   sectionSubtitle: { fontSize: 12, color: colors.textSecondary, marginBottom: 12, marginTop: -4 },
