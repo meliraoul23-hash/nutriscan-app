@@ -98,38 +98,26 @@ export const firebaseLogout = async () => {
 
 export const firebaseGoogleLogin = async () => {
   try {
-    // Check if we're on web (browser environment)
-    const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
+    // Always use web method for now (works in browser and Expo web)
+    console.log('[Google Auth] Starting login with redirect method...');
     
-    console.log('[Google Auth] Starting login, isWeb:', isWeb);
+    googleProvider.setCustomParameters({
+      prompt: 'select_account'
+    });
     
-    if (isWeb) {
-      googleProvider.setCustomParameters({
-        prompt: 'select_account'
-      });
-      
-      // Use redirect method directly - it works better with COOP restrictions
-      console.log('[Google Auth] Using redirect method for better compatibility...');
-      
-      // Store that we're attempting redirect
-      try {
-        await AsyncStorage.setItem('google_auth_redirect', 'pending');
-      } catch (e) {
-        // AsyncStorage might not work on web, use localStorage as fallback
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem('google_auth_redirect', 'pending');
-        }
+    // Store that we're attempting redirect
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('google_auth_redirect', 'pending');
       }
-      
-      await signInWithRedirect(auth, googleProvider);
-      
-      // This won't be reached immediately as page redirects
-      return { user: null, error: null };
-    } else {
-      // For mobile, we'll need expo-auth-session (handled separately)
-      console.log('[Google Auth] Mobile detected, not supported via popup');
-      return { user: null, error: 'La connexion Google sur mobile necessite l\'application Expo Go' };
+    } catch (e) {
+      console.log('[Google Auth] Could not save redirect state');
     }
+    
+    await signInWithRedirect(auth, googleProvider);
+    
+    // This won't be reached immediately as page redirects
+    return { user: null, error: null };
   } catch (error: any) {
     console.log('[Google Auth] Error:', error.code, error.message);
     let message = 'Connexion Google echouee';

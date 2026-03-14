@@ -652,20 +652,24 @@ async def get_alternatives(barcode: str):
 # ============== HISTORY ROUTES ==============
 @api_router.post("/history", response_model=ScanHistory)
 async def save_scan_history(scan: ScanHistoryCreate, user: User = Depends(get_current_user)):
+    # Get user_id
+    user_id = user.user_id if user else None
+    
     # Check if this product was already scanned recently (within last 5 seconds) to prevent duplicates
     five_seconds_ago = datetime.now(timezone.utc) - timedelta(seconds=5)
-    existing = await db.scan_history.find_one({
-        "barcode": scan.barcode,
-        "timestamp": {"$gte": five_seconds_ago}
-    })
+    query = {"barcode": scan.barcode, "timestamp": {"$gte": five_seconds_ago}}
+    if user_id:
+        query["user_id"] = user_id
+    
+    existing = await db.scan_history.find_one(query)
     
     if existing:
         return ScanHistory(**{**existing, "id": existing.get("id", str(uuid.uuid4()))})
     
     scan_dict = scan.model_dump()
     scan_obj = ScanHistory(**scan_dict)
-    if user:
-        scan_obj.user_id = user.user_id
+    if user_id:
+        scan_obj.user_id = user_id
     
     await db.scan_history.insert_one(scan_obj.model_dump())
     return scan_obj
@@ -1035,10 +1039,10 @@ async def get_product_with_dietary_check(barcode: str, email: Optional[str] = No
 async def search_products(q: str, page: int = 1, page_size: int = 15):
     """Search products in Open Food Facts database - optimized for speed"""
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            # Use world API with French language preference
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            # Use French API for better French results
             response = await client.get(
-                "https://world.openfoodfacts.org/cgi/search.pl",
+                "https://fr.openfoodfacts.org/cgi/search.pl",
                 params={
                     'search_terms': q, 
                     'search_simple': 1, 
@@ -1046,7 +1050,9 @@ async def search_products(q: str, page: int = 1, page_size: int = 15):
                     'page': page, 
                     'page_size': page_size, 
                     'json': 1,
-                    'fields': 'code,product_name,product_name_fr,product_name_en,brands,image_url,nutriscore_grade,nova_group'
+                    'fields': 'code,product_name,product_name_fr,product_name_en,brands,image_url,nutriscore_grade,nova_group',
+                    'lc': 'fr',
+                    'cc': 'fr'
                 }
             )
             data = response.json()
@@ -1054,7 +1060,7 @@ async def search_products(q: str, page: int = 1, page_size: int = 15):
             products = []
             for p in data.get('products', []):
                 # Prioritize French name, then English, then generic
-                name = p.get('product_name_fr') or p.get('product_name_en') or p.get('product_name') or ''
+                name = p.get('product_name_fr') or p.get('product_name') or p.get('product_name_en') or ''
                 if not name:
                     continue
                 
@@ -1081,7 +1087,6 @@ async def search_products(q: str, page: int = 1, page_size: int = 15):
             return {'products': products, 'count': data.get('count', 0), 'page': page, 'page_size': page_size}
     except Exception as e:
         logger.error(f"Search error: {str(e)}")
-        return {'products': [], 'count': 0, 'page': page, 'page_size': page_size}
         return {'products': [], 'count': 0, 'page': page, 'page_size': page_size}
 
 # ============== RANKINGS ROUTES ==============
