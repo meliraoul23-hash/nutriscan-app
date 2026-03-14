@@ -23,8 +23,8 @@ const getBaseUrl = () => {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
     return window.location.origin;
   }
-  // For mobile, use the backend URL from env
-  return process.env.EXPO_PUBLIC_BACKEND_URL || 'https://nutriscan-167.preview.emergentagent.com';
+  // For mobile, use the backend URL from env (required for deployment)
+  return process.env.EXPO_PUBLIC_BACKEND_URL || '';
 };
 
 const FEATURES = [
