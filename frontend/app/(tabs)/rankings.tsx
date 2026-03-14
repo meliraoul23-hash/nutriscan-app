@@ -18,11 +18,15 @@ import { colors, getScoreColor } from '../../src/styles/colors';
 
 export default function RankingsScreen() {
   const router = useRouter();
-  const { rankings, fetchProduct, refreshing, onRefresh, fetchRankings } = useApp();
+  const { rankings, fetchProduct, refreshing, onRefresh, fetchRankings, productLoading } = useApp();
 
-  const handleProductPress = (barcode: string) => {
-    fetchProduct(barcode);
-    router.push('/product');
+  const handleProductPress = async (barcode: string) => {
+    try {
+      await fetchProduct(barcode);
+      router.push('/product');
+    } catch (error) {
+      console.log('Error fetching product:', error);
+    }
   };
 
   // Filter products with score >= 85 (excellent products)

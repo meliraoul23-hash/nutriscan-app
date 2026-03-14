@@ -10,11 +10,11 @@ import {
   Share,
   Linking,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useApp } from '../src/contexts/AppContext';
 import { useAuth } from '../src/contexts/AuthContext';
@@ -50,7 +50,7 @@ const getNutriColor = (grade: string): string => {
 export default function ProductScreen() {
   const router = useRouter();
   const { user } = useAuth();
-  const { currentProduct: product, favorites, setFavorites } = useApp();
+  const { product, productLoading, favorites, setFavorites, fetchProduct } = useApp();
   
   const [alternatives, setAlternatives] = useState<any[]>([]);
   const [isFavorite, setIsFavorite] = useState(false);
@@ -77,7 +77,7 @@ export default function ProductScreen() {
     if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       await Share.share({
-        message: `${product.name} - Score: ${product.health_score}/100 🥗\nDécouvert avec NutriScan`,
+        message: `${product.name} - Score: ${product.health_score}/100\nDecouvert avec NutriScan`,
       });
     } catch (error) {}
   };
@@ -97,11 +97,46 @@ export default function ProductScreen() {
     } catch (error) {}
   };
 
-  if (!product) {
+  const handleAlternativePress = async (barcode: string) => {
+    if (Platform.OS !== 'web') await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await fetchProduct(barcode);
+  };
+
+  // Loading state
+  if (productLoading) {
     return (
       <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+            <Ionicons name="chevron-back" size={28} color={COLORS.text} />
+          </TouchableOpacity>
+          <View style={{ width: 28 }} />
+        </View>
         <View style={styles.loading}>
-          <Text style={styles.loadingText}>Chargement...</Text>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Chargement du produit...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // No product or not found
+  if (!product || !product.found) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerBtn}>
+            <Ionicons name="chevron-back" size={28} color={COLORS.text} />
+          </TouchableOpacity>
+          <View style={{ width: 28 }} />
+        </View>
+        <View style={styles.loading}>
+          <Ionicons name="alert-circle-outline" size={64} color={COLORS.textSecondary} />
+          <Text style={styles.loadingText}>Produit non trouve</Text>
+          <Text style={styles.subText}>Essayez un autre code-barres</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => router.back()}>
+            <Text style={styles.retryText}>Retour</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -192,7 +227,7 @@ export default function ProductScreen() {
               <View key={index} style={styles.altCard}>
                 <TouchableOpacity
                   style={styles.altContent}
-                  onPress={() => router.push({ pathname: '/product', params: { barcode: alt.barcode } })}
+                  onPress={() => handleAlternativePress(alt.barcode)}
                 >
                   <View style={styles.altImage}>
                     {alt.image_url ? (
@@ -232,15 +267,15 @@ const getScoreGrade = (score: number): string => {
   if (score >= 80) return 'Excellent';
   if (score >= 60) return 'Bon';
   if (score >= 45) return 'Moyen';
-  if (score >= 30) return 'Médiocre';
-  return 'À éviter';
+  if (score >= 30) return 'Mediocre';
+  return 'A eviter';
 };
 
 const getProTip = (score: number): string => {
-  if (score >= 80) return "🌟 Excellent choix pour la santé !";
-  if (score >= 60) return "👍 Bon produit, consommable régulièrement.";
-  if (score >= 45) return "⚠️ À consommer avec modération.";
-  return "🔶 Privilégiez des alternatives plus saines.";
+  if (score >= 80) return "Excellent choix pour la sante !";
+  if (score >= 60) return "Bon produit, consommable regulierement.";
+  if (score >= 45) return "A consommer avec moderation.";
+  return "Privilegiez des alternatives plus saines.";
 };
 
 const getRiskColor = (risk: string): string => {
@@ -255,16 +290,19 @@ const getRiskColor = (risk: string): string => {
 const getRiskLabel = (risk: string): string => {
   switch (risk?.toLowerCase()) {
     case 'low': return 'Faible';
-    case 'medium': return 'Modéré';
-    case 'high': return 'Élevé';
+    case 'medium': return 'Modere';
+    case 'high': return 'Eleve';
     default: return '?';
   }
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: COLORS.textSecondary },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40 },
+  loadingText: { fontSize: 18, color: COLORS.text, fontWeight: '600', marginTop: 16 },
+  subText: { fontSize: 14, color: COLORS.textSecondary, marginTop: 8, textAlign: 'center' },
+  retryBtn: { marginTop: 24, backgroundColor: COLORS.primary, paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12 },
+  retryText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -1,4 +1,4 @@
-// Home Screen - Simplified Premium Design
+// Home Screen - Simplified Premium Design with Green Leaf Logo
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -8,9 +8,9 @@ import {
   TouchableOpacity,
   Image,
   RefreshControl,
-  Animated,
   Platform,
   Dimensions,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -45,15 +45,10 @@ const getScoreColor = (score: number): string => {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const { scanHistory, healingFoods, fetchProduct, refreshData, loading } = useApp();
-  const [refreshing, setRefreshing] = useState(false);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await refreshData();
-    setRefreshing(false);
-  };
+  const { user, isPremium } = useAuth();
+  const { history, healingFoods, fetchProduct, onRefresh, refreshing } = useApp();
+  const [selectedFood, setSelectedFood] = useState<any>(null);
+  const [showFoodModal, setShowFoodModal] = useState(false);
 
   const handleScanPress = async () => {
     if (Platform.OS !== 'web') {
@@ -70,10 +65,18 @@ export default function HomeScreen() {
     router.push('/product');
   };
 
+  const handleHealingFoodPress = (food: any) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedFood(food);
+    setShowFoodModal(true);
+  };
+
   const getGreeting = (): string => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Bonjour';
-    if (hour < 18) return 'Bon après-midi';
+    if (hour < 18) return 'Bon apres-midi';
     return 'Bonsoir';
   };
 
@@ -87,11 +90,16 @@ export default function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />
         }
       >
-        {/* Header */}
+        {/* Header with Green Leaf Logo */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>{getGreeting()} 👋</Text>
-            <Text style={styles.userName}>{user?.email?.split('@')[0] || 'Bienvenue'}</Text>
+          <View style={styles.logoContainer}>
+            <View style={styles.leafLogo}>
+              <Ionicons name="leaf" size={28} color="#FFFFFF" />
+            </View>
+            <View>
+              <Text style={styles.appName}>NutriScan</Text>
+              <Text style={styles.greeting}>{getGreeting()}, {user?.email?.split('@')[0] || 'Bienvenue'}</Text>
+            </View>
           </View>
           <TouchableOpacity style={styles.coachBtn} onPress={() => router.push('/coach')}>
             <LinearGradient colors={['#9C27B0', '#7B1FA2']} style={styles.coachGradient}>
@@ -99,6 +107,14 @@ export default function HomeScreen() {
             </LinearGradient>
           </TouchableOpacity>
         </View>
+
+        {/* Premium Badge */}
+        {isPremium && (
+          <View style={styles.premiumBadge}>
+            <Ionicons name="star" size={14} color="#FFB300" />
+            <Text style={styles.premiumText}>Premium</Text>
+          </View>
+        )}
 
         {/* Scan Button */}
         <TouchableOpacity style={styles.scanCard} onPress={handleScanPress} activeOpacity={0.9}>
@@ -108,7 +124,7 @@ export default function HomeScreen() {
             </View>
             <View style={styles.scanText}>
               <Text style={styles.scanTitle}>Scanner un produit</Text>
-              <Text style={styles.scanSubtitle}>Découvrez son score santé</Text>
+              <Text style={styles.scanSubtitle}>Decouvrez son score sante</Text>
             </View>
             <Ionicons name="chevron-forward" size={24} color="rgba(255,255,255,0.8)" />
           </LinearGradient>
@@ -125,7 +141,7 @@ export default function HomeScreen() {
           
           <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/fridge-score')}>
             <View style={[styles.quickIcon, { backgroundColor: '#5856D620' }]}>
-              <Text style={{ fontSize: 20 }}>🧊</Text>
+              <Text style={{ fontSize: 20 }}>&#129482;</Text>
             </View>
             <Text style={styles.quickLabel}>Mon Frigo</Text>
           </TouchableOpacity>
@@ -134,7 +150,7 @@ export default function HomeScreen() {
             <View style={[styles.quickIcon, { backgroundColor: '#FF9F0A20' }]}>
               <Ionicons name="settings" size={22} color="#FF9F0A" />
             </View>
-            <Text style={styles.quickLabel}>Préférences</Text>
+            <Text style={styles.quickLabel}>Preferences</Text>
           </TouchableOpacity>
           
           <TouchableOpacity style={styles.quickCard} onPress={() => router.push('/premium')}>
@@ -148,20 +164,20 @@ export default function HomeScreen() {
         {/* Recent Scans */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Scans récents</Text>
+            <Text style={styles.sectionTitle}>Scans recents</Text>
             <TouchableOpacity onPress={() => router.push('/(tabs)/history')}>
               <Text style={styles.seeAll}>Voir tout</Text>
             </TouchableOpacity>
           </View>
 
-          {!scanHistory || scanHistory.length === 0 ? (
+          {!history || history.length === 0 ? (
             <View style={styles.emptyCard}>
               <Ionicons name="scan-outline" size={48} color={COLORS.textSecondary} />
               <Text style={styles.emptyTitle}>Aucun scan</Text>
               <Text style={styles.emptySubtitle}>Scannez votre premier produit</Text>
             </View>
           ) : (
-            scanHistory.slice(0, 5).map((item: any, index: number) => (
+            history.slice(0, 5).map((item: any, index: number) => (
               <TouchableOpacity
                 key={`${item.barcode}-${index}`}
                 style={styles.productCard}
@@ -201,7 +217,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   key={index}
                   style={styles.healingCard}
-                  onPress={() => food.barcode && handleProductPress(food.barcode)}
+                  onPress={() => handleHealingFoodPress(food)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.healingImage}>
@@ -215,13 +231,12 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.healingInfo}>
                     <Text style={styles.healingName} numberOfLines={2}>{food.name}</Text>
-                    {food.health_score ? (
-                      <View style={[styles.healingScore, { backgroundColor: getScoreColor(food.health_score) }]}>
-                        <Text style={styles.healingScoreText}>{food.health_score}</Text>
-                      </View>
-                    ) : food.benefits && food.benefits.length > 0 ? (
+                    {food.benefits && food.benefits.length > 0 && (
                       <Text style={styles.healingBenefit} numberOfLines={1}>{food.benefits[0]}</Text>
-                    ) : null}
+                    )}
+                  </View>
+                  <View style={styles.tapHint}>
+                    <Ionicons name="information-circle" size={16} color={COLORS.primary} />
                   </View>
                 </TouchableOpacity>
               ))}
@@ -231,6 +246,74 @@ export default function HomeScreen() {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* Healing Food Detail Modal */}
+      <Modal visible={showFoodModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIcon}>
+                {selectedFood?.image && selectedFood.image.length < 5 ? (
+                  <Text style={{ fontSize: 40 }}>{selectedFood.image}</Text>
+                ) : (
+                  <Ionicons name="leaf" size={40} color={COLORS.primary} />
+                )}
+              </View>
+              <Text style={styles.modalTitle}>{selectedFood?.name}</Text>
+              <TouchableOpacity style={styles.closeBtn} onPress={() => setShowFoodModal(false)}>
+                <Ionicons name="close" size={24} color={COLORS.text} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalScroll}>
+              {selectedFood?.benefits && selectedFood.benefits.length > 0 && (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Bienfaits</Text>
+                  <View style={styles.benefitsList}>
+                    {selectedFood.benefits.map((benefit: string, i: number) => (
+                      <View key={i} style={styles.benefitTag}>
+                        <Ionicons name="checkmark-circle" size={14} color={COLORS.primary} />
+                        <Text style={styles.benefitText}>{benefit}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {selectedFood?.conditions && selectedFood.conditions.length > 0 && (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Peut aider pour</Text>
+                  <View style={styles.benefitsList}>
+                    {selectedFood.conditions.map((condition: string, i: number) => (
+                      <View key={i} style={styles.conditionTag}>
+                        <Text style={styles.conditionText}>{condition}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {selectedFood?.source && (
+                <View style={styles.modalSection}>
+                  <Text style={styles.modalSectionTitle}>Source</Text>
+                  <Text style={styles.sourceText}>{selectedFood.source}</Text>
+                </View>
+              )}
+
+              <View style={styles.disclaimer}>
+                <Ionicons name="information-circle" size={16} color={COLORS.textSecondary} />
+                <Text style={styles.disclaimerText}>
+                  Ces informations sont donnees a titre indicatif. Consultez un professionnel de sante pour des conseils personnalises.
+                </Text>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity style={styles.closeModalBtn} onPress={() => setShowFoodModal(false)}>
+              <Text style={styles.closeModalText}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -251,17 +334,51 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  leafLogo: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  appName: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.text,
   },
   greeting: {
-    fontSize: 15,
+    fontSize: 13,
     color: COLORS.textSecondary,
-  },
-  userName: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: COLORS.text,
     marginTop: 2,
+  },
+  premiumBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFF8E1',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 16,
+  },
+  premiumText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFB300',
+    marginLeft: 4,
   },
   coachBtn: {
     borderRadius: 22,
@@ -470,34 +587,144 @@ const styles = StyleSheet.create({
   },
   healingInfo: {
     padding: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   healingName: {
-    flex: 1,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.text,
-  },
-  healingScore: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 6,
-  },
-  healingScoreText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFF',
   },
   healingEmoji: {
     fontSize: 40,
   },
   healingBenefit: {
-    fontSize: 10,
+    fontSize: 11,
     color: COLORS.primary,
     fontWeight: '500',
+    marginTop: 4,
+  },
+  tapHint: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    borderRadius: 12,
+    padding: 4,
+  },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '80%',
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  modalIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORS.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    padding: 8,
+  },
+  modalScroll: {
+    paddingHorizontal: 20,
+  },
+  modalSection: {
+    marginTop: 20,
+  },
+  modalSectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 12,
+  },
+  benefitsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  benefitTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F5E9',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  benefitText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '500',
+    marginLeft: 6,
+  },
+  conditionTag: {
+    backgroundColor: '#E3F2FD',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  conditionText: {
+    fontSize: 13,
+    color: '#1976D2',
+    fontWeight: '500',
+  },
+  sourceText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  disclaimer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FFF8E1',
+    padding: 12,
+    borderRadius: 12,
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  disclaimerText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginLeft: 8,
+    lineHeight: 18,
+  },
+  closeModalBtn: {
+    marginHorizontal: 20,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  closeModalText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
   },
 });
