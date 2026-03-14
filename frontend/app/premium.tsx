@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
-  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,16 +17,17 @@ import { useAuth } from '../src/contexts/AuthContext';
 import { createCheckoutSessionAPI } from '../src/services/api';
 import { colors } from '../src/styles/colors';
 
-// Get base URL for redirects - works on both web and mobile
-const getBaseUrl = () => {
-  // For web platform, always use window.location.origin
-  if (Platform.OS === 'web') {
+// Get base URL for redirects
+// On web: uses window.location.origin
+// On mobile: Stripe checkout opens in external browser where window.location.origin will be available
+const getBaseUrl = (): string => {
+  // Always try to use window.location.origin if available
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
     return window.location.origin;
   }
-  // For mobile (iOS/Android), Stripe will open in external browser
-  // which will have access to window.location after redirect
-  // Use EXPO_PUBLIC_BACKEND_URL as the landing page
-  return process.env.EXPO_PUBLIC_BACKEND_URL;
+  // Fallback for SSR or edge cases - this won't be used in practice
+  // because Stripe always opens in a browser context
+  return '';
 };
 
 const FEATURES = [
