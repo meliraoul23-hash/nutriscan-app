@@ -2652,7 +2652,7 @@ PREMIUM_RECIPES = [
         "title": "Buddha Bowl Mediterraneen",
         "subtitle": "Bowl equilibre aux saveurs du sud",
         "heroImage": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800",
-        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "videoUrl": "",
         "prepTime": 15,
         "totalTime": 35,
         "servings": 2,
@@ -2680,7 +2680,6 @@ PREMIUM_RECIPES = [
                 "duration": 15,
                 "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400",
                 "tip": "Le quinoa est pret quand les grains sont translucides.",
-                "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
             },
             {
                 "id": "step2",
@@ -2692,7 +2691,7 @@ PREMIUM_RECIPES = [
             },
             {
                 "id": "step3",
-                "title": "Rôtir les pois chiches",
+                "title": "Rotir les pois chiches",
                 "description": "Egouttez les pois chiches. Faites-les rotir a la poele avec un filet d'huile d'olive pendant 8 minutes.",
                 "duration": 8,
                 "image": "https://images.unsplash.com/photo-1515543237350-b3eea1ec8082?w=400",
@@ -2716,7 +2715,7 @@ PREMIUM_RECIPES = [
         "title": "Saumon Teriyaki",
         "subtitle": "Filet de saumon glace aux saveurs japonaises",
         "heroImage": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800",
-        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+        "videoUrl": "",
         "prepTime": 10,
         "totalTime": 25,
         "servings": 2,
@@ -2774,7 +2773,7 @@ PREMIUM_RECIPES = [
         "title": "Smoothie Bowl Tropical",
         "subtitle": "Petit-dejeuner vitamine et colore",
         "heroImage": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=800",
-        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+        "videoUrl": "",
         "prepTime": 10,
         "totalTime": 10,
         "servings": 1,

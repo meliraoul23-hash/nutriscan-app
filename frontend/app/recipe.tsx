@@ -44,11 +44,11 @@ const HEADER_MAX_HEIGHT = 300;
 const HEADER_MIN_HEIGHT = 100;
 const HEADER_SCROLL_DISTANCE = HEADER_MAX_HEIGHT - HEADER_MIN_HEIGHT;
 
-// Video URLs for recipes (using public domain videos)
+// Video URLs for recipes - Empty since we don't have real cooking videos
 const RECIPE_VIDEOS = {
-  main: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-  step1: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-  step2: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+  main: '',
+  step1: '',
+  step2: '',
 };
 
 // Mock recipe data
@@ -57,7 +57,7 @@ const MOCK_RECIPE = {
   title: 'Buddha Bowl Mediterraneen',
   subtitle: 'Bowl equilibre aux saveurs du sud',
   heroImage: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800',
-  videoUrl: RECIPE_VIDEOS.main,
+  videoUrl: '',
   duration: '35 min',
   difficulty: 'Facile',
   servings: 2,
@@ -86,7 +86,6 @@ const MOCK_RECIPE = {
       description: 'Rincez le quinoa sous l\'eau froide. Faites cuire dans 2 volumes d\'eau salee pendant 15 minutes.',
       duration: 15,
       image: 'https://images.unsplash.com/photo-1586201375761-83865001e31c?w=300',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
       tip: 'Le quinoa est pret quand les grains sont translucides.'
     },
     {
@@ -95,7 +94,6 @@ const MOCK_RECIPE = {
       description: 'Coupez le concombre en rondelles, les tomates cerises en deux, et l\'avocat en tranches.',
       duration: 5,
       image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=300',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
       tip: 'Arrosez l\'avocat de jus de citron pour eviter qu\'il noircisse.'
     },
     {
@@ -104,7 +102,6 @@ const MOCK_RECIPE = {
       description: 'Egouttez et sechez les pois chiches. Faites-les rotir a la poele avec de l\'huile d\'olive.',
       duration: 8,
       image: 'https://images.unsplash.com/photo-1515543237350-b3eea1ec8082?w=300',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
       tip: 'Les pois chiches doivent etre dores et croustillants.'
     },
     {
@@ -113,7 +110,6 @@ const MOCK_RECIPE = {
       description: 'Disposez le quinoa au fond. Arrangez les legumes en sections. Ajoutez la feta et les pois chiches.',
       duration: 3,
       image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300',
-      videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
       tip: 'Presentez les ingredients en arc-en-ciel pour un effet visuel.'
     },
   ],
@@ -804,8 +800,16 @@ export default function RecipeDetailScreen() {
           
           {/* Header */}
           <View style={[cookingStyles.header, isLandscape && cookingStyles.headerLandscape]}>
-            <TouchableOpacity onPress={() => setIsCookingMode(false)} style={cookingStyles.headerBtn}>
-              <Ionicons name="close" size={isLandscape ? 24 : 30} color="#FFF" />
+            <TouchableOpacity 
+              onPress={() => {
+                console.log('Closing cooking mode');
+                setIsCookingMode(false);
+              }} 
+              style={cookingStyles.closeBtn}
+              activeOpacity={0.7}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            >
+              <Ionicons name="close-circle" size={isLandscape ? 32 : 40} color="#FFF" />
             </TouchableOpacity>
             <Text style={[cookingStyles.title, isLandscape && cookingStyles.titleLandscape]}>
               Mode Cuisine
@@ -957,6 +961,14 @@ export default function RecipeDetailScreen() {
       height: 44,
       borderRadius: 22,
       backgroundColor: 'rgba(255,255,255,0.15)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    closeBtn: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: 'rgba(255,0,0,0.3)',
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -1229,24 +1241,26 @@ export default function RecipeDetailScreen() {
       >
         <View style={{ height: HEADER_MAX_HEIGHT }} />
 
-        {/* Main Video Section */}
-        <View style={styles.mainVideoSection}>
-          <Text style={styles.videoSectionTitle}>Tutoriel Video</Text>
-          <TouchableOpacity 
-            style={styles.mainVideoCard}
-            onPress={() => setShowMainVideo(true)}
-            activeOpacity={0.9}
-          >
-            <Image source={{ uri: recipe.heroImage }} style={styles.mainVideoThumbnail} />
-            <View style={styles.mainVideoOverlay}>
-              <View style={styles.mainVideoPlayBtn}>
-                <Ionicons name="play" size={40} color="#FFF" />
+        {/* Main Video Section - Only show if video URL exists */}
+        {recipe.videoUrl && recipe.videoUrl.length > 0 && (
+          <View style={styles.mainVideoSection}>
+            <Text style={styles.videoSectionTitle}>Tutoriel Video</Text>
+            <TouchableOpacity 
+              style={styles.mainVideoCard}
+              onPress={() => setShowMainVideo(true)}
+              activeOpacity={0.9}
+            >
+              <Image source={{ uri: recipe.heroImage }} style={styles.mainVideoThumbnail} />
+              <View style={styles.mainVideoOverlay}>
+                <View style={styles.mainVideoPlayBtn}>
+                  <Ionicons name="play" size={40} color="#FFF" />
+                </View>
+                <Text style={styles.mainVideoTitle}>Voir la recette complete</Text>
+                <Text style={styles.mainVideoDuration}>Tutorial - 5 min</Text>
               </View>
-              <Text style={styles.mainVideoTitle}>Voir la recette complete</Text>
-              <Text style={styles.mainVideoDuration}>Tutorial - 5 min</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Recipe Info Bar */}
         <View style={styles.infoBar}>
