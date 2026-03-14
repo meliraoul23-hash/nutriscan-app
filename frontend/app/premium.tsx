@@ -20,11 +20,14 @@ import { colors } from '../src/styles/colors';
 
 // Get base URL for redirects - works on both web and mobile
 const getBaseUrl = () => {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+  // For web platform, always use window.location.origin
+  if (Platform.OS === 'web') {
     return window.location.origin;
   }
-  // For mobile, use the backend URL from env (required for deployment)
-  return process.env.EXPO_PUBLIC_BACKEND_URL || '';
+  // For mobile (iOS/Android), Stripe will open in external browser
+  // which will have access to window.location after redirect
+  // Use EXPO_PUBLIC_BACKEND_URL as the landing page
+  return process.env.EXPO_PUBLIC_BACKEND_URL;
 };
 
 const FEATURES = [
