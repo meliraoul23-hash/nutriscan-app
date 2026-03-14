@@ -1330,7 +1330,7 @@ export default function RecipeDetailScreen() {
                 onPress={() => toggleIngredient(ingredient.id)}
               >
                 <View style={[styles.checkCircle, ingredient.checked && styles.checkCircleChecked]}>
-                  {ingredient.checked && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                  {ingredient.checked ? <Ionicons name="checkmark" size={16} color="#FFF" /> : null}
                 </View>
                 <View style={styles.ingredientInfo}>
                   <Text style={[styles.ingredientName, ingredient.checked && styles.ingredientNameChecked]}>

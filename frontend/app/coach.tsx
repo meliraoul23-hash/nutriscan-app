@@ -355,8 +355,8 @@ export default function CoachScreen() {
               <Text style={styles.recordingText}>REC</Text>
             </View>
           )}
-          {voiceState === 'processing' && <ActivityIndicator size="small" color="#FFF" />}
-          {voiceState === 'speaking' && <Ionicons name="volume-high" size={18} color="#FFF" />}
+          {voiceState === 'processing' ? <ActivityIndicator size="small" color="#FFF" /> : null}
+          {voiceState === 'speaking' ? <Ionicons name="volume-high" size={18} color="#FFF" /> : null}
           <Text style={styles.statusText}>{getStatusText()}</Text>
         </View>
       )}

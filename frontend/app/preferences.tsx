@@ -261,7 +261,7 @@ export default function PreferencesScreen() {
               <View style={styles.optionText}>
                 <View style={styles.optionLabelRow}>
                   <Text style={styles.optionLabel}>Mode Hors-ligne</Text>
-                  {!isPremium && <Ionicons name="lock-closed" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />}
+                  {!isPremium ? <Ionicons name="lock-closed" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} /> : null}
                 </View>
                 <Text style={styles.optionDescription}>
                   Scannez sans connexion internet
@@ -321,7 +321,7 @@ export default function PreferencesScreen() {
               <View style={styles.optionText}>
                 <View style={styles.optionLabelRow}>
                   <Text style={styles.optionLabel}>Rapports Additifs Avancés</Text>
-                  {!isPremium && <Ionicons name="lock-closed" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} />}
+                  {!isPremium ? <Ionicons name="lock-closed" size={14} color={colors.textSecondary} style={{ marginLeft: 6 }} /> : null}
                 </View>
                 <Text style={styles.optionDescription}>
                   Études scientifiques et analyses détaillées

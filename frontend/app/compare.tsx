@@ -231,7 +231,7 @@ export default function CompareScreen() {
                   <Text style={[styles.comparisonValue, winner === 1 && styles.winnerValue]}>
                     {comp.isGrade ? String(comp.val1).toUpperCase() : `${comp.val1}${comp.unit || ''}`}
                   </Text>
-                  {winner === 1 && <Ionicons name="checkmark-circle" size={16} color={colors.success} />}
+                  {winner === 1 ? <Ionicons name="checkmark-circle" size={16} color={colors.success} /> : null}
                 </View>
                 <View style={styles.comparisonLabelContainer}>
                   <Text style={styles.comparisonLabel}>{comp.label}</Text>
@@ -240,7 +240,7 @@ export default function CompareScreen() {
                   <Text style={[styles.comparisonValue, winner === 2 && styles.winnerValue]}>
                     {comp.isGrade ? String(comp.val2).toUpperCase() : `${comp.val2}${comp.unit || ''}`}
                   </Text>
-                  {winner === 2 && <Ionicons name="checkmark-circle" size={16} color={colors.success} />}
+                  {winner === 2 ? <Ionicons name="checkmark-circle" size={16} color={colors.success} /> : null}
                 </View>
               </View>
             );
