@@ -13,6 +13,7 @@ import {
   onAuthStateChange,
   formatUser,
   getIdToken,
+  checkGoogleRedirectResult,
 } from '../firebase';
 
 // Storage keys
@@ -92,6 +93,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       } catch (e) {
         console.log('[Auth] Error loading test mode:', e);
+      }
+      
+      // Check for Google redirect result
+      try {
+        console.log('[Auth] Checking for Google redirect result...');
+        const redirectResult = await checkGoogleRedirectResult();
+        if (redirectResult.user) {
+          console.log('[Auth] Google redirect login successful:', redirectResult.user.email);
+        }
+      } catch (e) {
+        console.log('[Auth] Error checking redirect result:', e);
       }
     };
     loadInitialState();

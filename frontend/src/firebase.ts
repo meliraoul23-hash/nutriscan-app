@@ -108,33 +108,23 @@ export const firebaseGoogleLogin = async () => {
         prompt: 'select_account'
       });
       
-      console.log('[Google Auth] Calling signInWithPopup...');
+      // Use redirect method directly - it works better with COOP restrictions
+      console.log('[Google Auth] Using redirect method for better compatibility...');
       
+      // Store that we're attempting redirect
       try {
-        // First try popup (works better on most browsers)
-        const result = await signInWithPopup(auth, googleProvider);
-        console.log('[Google Auth] Popup success:', result.user.email);
-        return { user: result.user, error: null };
-      } catch (popupError: any) {
-        console.log('[Google Auth] Popup failed:', popupError.code, popupError.message);
-        
-        // If popup was blocked or unauthorized domain, try redirect
-        if (popupError.code === 'auth/popup-blocked' || 
-            popupError.code === 'auth/unauthorized-domain' ||
-            popupError.code === 'auth/operation-not-supported-in-this-environment') {
-          console.log('[Google Auth] Trying redirect method...');
-          
-          // Store that we're attempting redirect
-          await AsyncStorage.setItem('google_auth_redirect', 'pending');
-          await signInWithRedirect(auth, googleProvider);
-          
-          // This won't be reached immediately as page redirects
-          return { user: null, error: null };
+        await AsyncStorage.setItem('google_auth_redirect', 'pending');
+      } catch (e) {
+        // AsyncStorage might not work on web, use localStorage as fallback
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('google_auth_redirect', 'pending');
         }
-        
-        // Re-throw other errors
-        throw popupError;
       }
+      
+      await signInWithRedirect(auth, googleProvider);
+      
+      // This won't be reached immediately as page redirects
+      return { user: null, error: null };
     } else {
       // For mobile, we'll need expo-auth-session (handled separately)
       console.log('[Google Auth] Mobile detected, not supported via popup');
@@ -146,7 +136,7 @@ export const firebaseGoogleLogin = async () => {
     if (error.code === 'auth/popup-closed-by-user') {
       message = 'Connexion annulee';
     } else if (error.code === 'auth/popup-blocked') {
-      message = 'Popup bloquee. Autorisez les popups pour ce site.';
+      message = 'Popup bloquee. Essayez de nouveau.';
     } else if (error.code === 'auth/cancelled-popup-request') {
       message = 'Connexion annulee';
     } else if (error.code === 'auth/unauthorized-domain') {
@@ -163,19 +153,38 @@ export const firebaseGoogleLogin = async () => {
 // Check for redirect result on page load
 export const checkGoogleRedirectResult = async () => {
   try {
-    const pendingRedirect = await AsyncStorage.getItem('google_auth_redirect');
-    if (pendingRedirect === 'pending') {
-      console.log('[Google Auth] Checking redirect result...');
-      await AsyncStorage.removeItem('google_auth_redirect');
-      
-      const result = await getRedirectResult(auth);
-      if (result?.user) {
-        console.log('[Google Auth] Redirect success:', result.user.email);
-        return { user: result.user, error: null };
+    // Check if we have a pending redirect
+    let pendingRedirect = null;
+    try {
+      pendingRedirect = await AsyncStorage.getItem('google_auth_redirect');
+    } catch (e) {
+      if (typeof localStorage !== 'undefined') {
+        pendingRedirect = localStorage.getItem('google_auth_redirect');
       }
     }
+    
+    console.log('[Google Auth] Checking redirect result, pending:', pendingRedirect);
+    
+    // Always check for redirect result (Firebase handles the state)
+    const result = await getRedirectResult(auth);
+    
+    // Clear the pending flag
+    try {
+      await AsyncStorage.removeItem('google_auth_redirect');
+    } catch (e) {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('google_auth_redirect');
+      }
+    }
+    
+    if (result?.user) {
+      console.log('[Google Auth] Redirect success:', result.user.email);
+      return { user: result.user, error: null };
+    }
+    
+    console.log('[Google Auth] No redirect result found');
   } catch (error: any) {
-    console.log('[Google Auth] Redirect result error:', error);
+    console.log('[Google Auth] Redirect result error:', error.code, error.message);
   }
   return { user: null, error: null };
 };
