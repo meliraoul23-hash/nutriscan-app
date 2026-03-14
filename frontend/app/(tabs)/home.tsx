@@ -203,6 +203,68 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {/* Premium Recipes Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recettes Premium</Text>
+            <TouchableOpacity onPress={() => router.push('/recipes')}>
+              <Text style={styles.seeAllText}>Voir tout</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {[
+              {
+                id: '1',
+                title: 'Buddha Bowl',
+                image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=300',
+                duration: '35 min',
+                score: 92,
+              },
+              {
+                id: '2',
+                title: 'Saumon Grille',
+                image: 'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=300',
+                duration: '25 min',
+                score: 88,
+              },
+              {
+                id: '3',
+                title: 'Poke Bowl',
+                image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=300',
+                duration: '20 min',
+                score: 90,
+              },
+            ].map((recipe) => (
+              <TouchableOpacity
+                key={recipe.id}
+                style={styles.recipeCard}
+                onPress={() => router.push({ pathname: '/recipe', params: { id: recipe.id } })}
+                activeOpacity={0.9}
+              >
+                <Image source={{ uri: recipe.image }} style={styles.recipeImage} />
+                <View style={styles.recipeOverlay} />
+                <View style={styles.recipeContent}>
+                  <View style={styles.recipeBadge}>
+                    <Ionicons name="star" size={10} color="#FFD700" />
+                    <Text style={styles.recipeBadgeText}>Premium</Text>
+                  </View>
+                  <Text style={styles.recipeTitle}>{recipe.title}</Text>
+                  <View style={styles.recipeMeta}>
+                    <Ionicons name="time-outline" size={12} color="#FFF" />
+                    <Text style={styles.recipeMetaText}>{recipe.duration}</Text>
+                    <View style={styles.recipeScore}>
+                      <Text style={styles.recipeScoreText}>{recipe.score}</Text>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.recipePlayIcon}>
+                  <Ionicons name="play-circle" size={36} color="rgba(255,255,255,0.9)" />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
         {/* Healing Foods */}
         {healingFoods && healingFoods.length > 0 && (
           <View style={styles.section}>
@@ -726,5 +788,77 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFF',
+  },
+  // Recipe Card Styles
+  recipeCard: {
+    width: 200,
+    height: 140,
+    marginRight: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  recipeImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  },
+  recipeOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  recipeContent: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 12,
+  },
+  recipeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    gap: 4,
+  },
+  recipeBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#FFD700',
+  },
+  recipeTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 6,
+  },
+  recipeMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recipeMetaText: {
+    fontSize: 12,
+    color: '#FFF',
+  },
+  recipeScore: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  recipeScoreText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFF',
+  },
+  recipePlayIcon: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -18 }, { translateY: -18 }],
   },
 });
