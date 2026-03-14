@@ -1,5 +1,5 @@
-// Search Tab Screen
-import React, { useState } from 'react';
+// Search Tab Screen - Fixed with instant search
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,31 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useApp } from '../../src/contexts/AppContext';
 import { searchProductsAPI } from '../../src/services/api';
-import { colors, getScoreColor } from '../../src/styles/colors';
+
+// Colors
+const COLORS = {
+  primary: '#34C759',
+  background: '#F2F2F7',
+  surface: '#FFFFFF',
+  text: '#1C1C1E',
+  textSecondary: '#8E8E93',
+};
+
+const getScoreColor = (score: number): string => {
+  if (score >= 80) return '#00C853';
+  if (score >= 60) return '#7CB342';
+  if (score >= 45) return '#FFB300';
+  if (score >= 30) return '#FF6D00';
+  return '#DD2C00';
+};
 
 export default function SearchScreen() {
   const router = useRouter();
@@ -23,99 +41,237 @@ export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
 
-  const searchProducts = async () => {
-    if (!searchQuery.trim()) {
+  // Debounced search - search after 500ms of typing
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) {
       setSearchResults([]);
+      setSearched(false);
       return;
     }
+
+    const timer = setTimeout(() => {
+      searchProducts();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const searchProducts = async () => {
+    if (!searchQuery.trim()) return;
+    
     setLoading(true);
+    setSearched(true);
     try {
-      const data = await searchProductsAPI(searchQuery);
+      const data = await searchProductsAPI(searchQuery.trim());
       setSearchResults(data.products || []);
     } catch (error) {
-      console.log('Error searching:', error);
+      console.log('Search error:', error);
+      setSearchResults([]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleProductPress = async (barcode: string) => {
-    await fetchProduct(barcode);
-    router.push('/product');
+    if (Platform.OS !== 'web') {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    try {
+      await fetchProduct(barcode);
+      router.push('/product');
+    } catch (error) {
+      console.log('Error fetching product:', error);
+    }
   };
 
-  const renderItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.resultItem} onPress={() => handleProductPress(item.barcode)}>
+  const renderItem = useCallback(({ item }: { item: any }) => (
+    <TouchableOpacity 
+      style={styles.resultItem} 
+      onPress={() => handleProductPress(item.barcode)}
+      activeOpacity={0.7}
+    >
       <View style={styles.resultImageContainer}>
         {item.image_url ? (
           <Image source={{ uri: item.image_url }} style={styles.resultImage} />
         ) : (
-          <Ionicons name="cube-outline" size={30} color={colors.textSecondary} />
+          <Ionicons name="cube-outline" size={28} color={COLORS.textSecondary} />
         )}
       </View>
       <View style={styles.resultInfo}>
-        <Text style={styles.resultName} numberOfLines={1}>{item.name}</Text>
+        <Text style={styles.resultName} numberOfLines={1}>{item.name || item.product_name}</Text>
         <Text style={styles.resultBrand} numberOfLines={1}>{item.brand || 'Marque inconnue'}</Text>
       </View>
-      <View style={[styles.resultScore, { backgroundColor: getScoreColor(item.health_score) }]}>
-        <Text style={styles.resultScoreText}>{item.health_score}</Text>
+      <View style={[styles.resultScore, { backgroundColor: getScoreColor(item.health_score || 50) }]}>
+        <Text style={styles.resultScoreText}>{item.health_score || '--'}</Text>
       </View>
     </TouchableOpacity>
-  );
+  ), []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <View style={styles.searchInputContainer}>
-        <Ionicons name="search" size={20} color={colors.textSecondary} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Rechercher un produit..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={searchProducts}
-          returnKeyType="search"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
-            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
+      {/* Search Input */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <Ionicons name="search" size={20} color={COLORS.textSecondary} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Rechercher un produit..."
+            placeholderTextColor={COLORS.textSecondary}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={searchProducts}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); setSearched(false); }}>
+              <Ionicons name="close-circle" size={20} color={COLORS.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
+      {/* Results */}
       {loading ? (
-        <ActivityIndicator size="large" color={colors.primary} style={{ marginTop: 40 }} />
-      ) : searchResults.length === 0 ? (
-        <View style={styles.emptyStateLarge}>
-          <Ionicons name="search-outline" size={64} color={colors.textSecondary} />
-          <Text style={styles.emptyStateTitle}>Rechercher un aliment</Text>
-          <Text style={styles.emptyStateSubtext}>Tapez le nom d'un produit pour le trouver</Text>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Recherche en cours...</Text>
         </View>
-      ) : (
+      ) : searchResults.length > 0 ? (
         <FlatList
           data={searchResults}
           keyExtractor={(item, index) => item.barcode || index.toString()}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingHorizontal: 16 }}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
         />
+      ) : searched ? (
+        <View style={styles.emptyState}>
+          <Ionicons name="search-outline" size={56} color={COLORS.textSecondary} />
+          <Text style={styles.emptyTitle}>Aucun résultat</Text>
+          <Text style={styles.emptySubtitle}>Essayez avec un autre mot-clé</Text>
+        </View>
+      ) : (
+        <View style={styles.emptyState}>
+          <Ionicons name="search-outline" size={56} color={COLORS.textSecondary} />
+          <Text style={styles.emptyTitle}>Rechercher un produit</Text>
+          <Text style={styles.emptySubtitle}>Tapez au moins 2 caractères</Text>
+        </View>
       )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  searchInputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 12, marginHorizontal: 16, marginVertical: 16, height: 48 },
-  searchInput: { flex: 1, fontSize: 16, marginLeft: 8, color: colors.text },
-  emptyStateLarge: { alignItems: 'center', paddingVertical: 60 },
-  emptyStateTitle: { fontSize: 18, fontWeight: '600', color: colors.text, marginTop: 16 },
-  emptyStateSubtext: { fontSize: 14, color: colors.textSecondary, marginTop: 8, textAlign: 'center' },
-  resultItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginBottom: 8 },
-  resultImageContainer: { width: 48, height: 48, borderRadius: 8, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
-  resultImage: { width: 48, height: 48, resizeMode: 'contain' },
-  resultInfo: { flex: 1, marginLeft: 12 },
-  resultName: { fontSize: 14, fontWeight: '500', color: colors.text },
-  resultBrand: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-  resultScore: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  resultScoreText: { color: '#FFF', fontWeight: '700', fontSize: 13 },
+  container: { 
+    flex: 1, 
+    backgroundColor: COLORS.background 
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  searchInputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: COLORS.surface, 
+    borderRadius: 14, 
+    paddingHorizontal: 14, 
+    height: 50,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  searchInput: { 
+    flex: 1, 
+    fontSize: 16, 
+    marginLeft: 10, 
+    color: COLORS.text 
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 15,
+    color: COLORS.textSecondary,
+    marginTop: 12,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 100,
+  },
+  emptyState: { 
+    alignItems: 'center', 
+    paddingVertical: 80 
+  },
+  emptyTitle: { 
+    fontSize: 18, 
+    fontWeight: '600', 
+    color: COLORS.text, 
+    marginTop: 16 
+  },
+  emptySubtitle: { 
+    fontSize: 14, 
+    color: COLORS.textSecondary, 
+    marginTop: 8, 
+    textAlign: 'center' 
+  },
+  resultItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: COLORS.surface, 
+    borderRadius: 14, 
+    padding: 14, 
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  resultImageContainer: { 
+    width: 52, 
+    height: 52, 
+    borderRadius: 12, 
+    backgroundColor: COLORS.background, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    overflow: 'hidden' 
+  },
+  resultImage: { 
+    width: 52, 
+    height: 52, 
+    resizeMode: 'contain' 
+  },
+  resultInfo: { 
+    flex: 1, 
+    marginLeft: 12 
+  },
+  resultName: { 
+    fontSize: 15, 
+    fontWeight: '600', 
+    color: COLORS.text 
+  },
+  resultBrand: { 
+    fontSize: 13, 
+    color: COLORS.textSecondary, 
+    marginTop: 2 
+  },
+  resultScore: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 14, 
+    justifyContent: 'center', 
+    alignItems: 'center' 
+  },
+  resultScoreText: { 
+    color: '#FFF', 
+    fontWeight: '700', 
+    fontSize: 15 
+  },
 });

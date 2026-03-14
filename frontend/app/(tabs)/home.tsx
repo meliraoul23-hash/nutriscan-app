@@ -201,11 +201,13 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   key={index}
                   style={styles.healingCard}
-                  onPress={() => handleProductPress(food.barcode)}
+                  onPress={() => food.barcode && handleProductPress(food.barcode)}
                   activeOpacity={0.8}
                 >
                   <View style={styles.healingImage}>
-                    {food.image_url ? (
+                    {food.image && food.image.length < 5 ? (
+                      <Text style={styles.healingEmoji}>{food.image}</Text>
+                    ) : food.image_url ? (
                       <Image source={{ uri: food.image_url }} style={styles.healingImg} />
                     ) : (
                       <Ionicons name="leaf" size={28} color={COLORS.primary} />
@@ -213,9 +215,13 @@ export default function HomeScreen() {
                   </View>
                   <View style={styles.healingInfo}>
                     <Text style={styles.healingName} numberOfLines={2}>{food.name}</Text>
-                    <View style={[styles.healingScore, { backgroundColor: getScoreColor(food.health_score) }]}>
-                      <Text style={styles.healingScoreText}>{food.health_score}</Text>
-                    </View>
+                    {food.health_score ? (
+                      <View style={[styles.healingScore, { backgroundColor: getScoreColor(food.health_score) }]}>
+                        <Text style={styles.healingScoreText}>{food.health_score}</Text>
+                      </View>
+                    ) : food.benefits && food.benefits.length > 0 ? (
+                      <Text style={styles.healingBenefit} numberOfLines={1}>{food.benefits[0]}</Text>
+                    ) : null}
                   </View>
                 </TouchableOpacity>
               ))}
@@ -485,5 +491,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#FFF',
+  },
+  healingEmoji: {
+    fontSize: 40,
+  },
+  healingBenefit: {
+    fontSize: 10,
+    color: COLORS.primary,
+    fontWeight: '500',
   },
 });
