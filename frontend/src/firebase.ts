@@ -9,6 +9,8 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithCredential,
   updateProfile,
   sendPasswordResetEmail,
@@ -99,30 +101,83 @@ export const firebaseGoogleLogin = async () => {
     // Check if we're on web (browser environment)
     const isWeb = typeof window !== 'undefined' && typeof document !== 'undefined';
     
+    console.log('[Google Auth] Starting login, isWeb:', isWeb);
+    
     if (isWeb) {
       googleProvider.setCustomParameters({
         prompt: 'select_account'
       });
-      const result = await signInWithPopup(auth, googleProvider);
-      return { user: result.user, error: null };
+      
+      console.log('[Google Auth] Calling signInWithPopup...');
+      
+      try {
+        // First try popup (works better on most browsers)
+        const result = await signInWithPopup(auth, googleProvider);
+        console.log('[Google Auth] Popup success:', result.user.email);
+        return { user: result.user, error: null };
+      } catch (popupError: any) {
+        console.log('[Google Auth] Popup failed:', popupError.code, popupError.message);
+        
+        // If popup was blocked or unauthorized domain, try redirect
+        if (popupError.code === 'auth/popup-blocked' || 
+            popupError.code === 'auth/unauthorized-domain' ||
+            popupError.code === 'auth/operation-not-supported-in-this-environment') {
+          console.log('[Google Auth] Trying redirect method...');
+          
+          // Store that we're attempting redirect
+          await AsyncStorage.setItem('google_auth_redirect', 'pending');
+          await signInWithRedirect(auth, googleProvider);
+          
+          // This won't be reached immediately as page redirects
+          return { user: null, error: null };
+        }
+        
+        // Re-throw other errors
+        throw popupError;
+      }
     } else {
       // For mobile, we'll need expo-auth-session (handled separately)
-      return { user: null, error: 'Utilisez le bouton Google sur mobile' };
+      console.log('[Google Auth] Mobile detected, not supported via popup');
+      return { user: null, error: 'La connexion Google sur mobile necessite l\'application Expo Go' };
     }
   } catch (error: any) {
-    console.log('Google login error:', error.code, error.message);
-    let message = 'Connexion Google échouée';
+    console.log('[Google Auth] Error:', error.code, error.message);
+    let message = 'Connexion Google echouee';
     if (error.code === 'auth/popup-closed-by-user') {
-      message = 'Connexion annulée';
+      message = 'Connexion annulee';
     } else if (error.code === 'auth/popup-blocked') {
-      message = 'Popup bloquée. Autorisez les popups pour ce site.';
+      message = 'Popup bloquee. Autorisez les popups pour ce site.';
     } else if (error.code === 'auth/cancelled-popup-request') {
-      message = 'Connexion annulée';
+      message = 'Connexion annulee';
     } else if (error.code === 'auth/unauthorized-domain') {
-      message = 'Domaine non autorisé. Ajoutez ce domaine dans Firebase Console > Authentication > Settings > Authorized domains';
+      message = 'Domaine non autorise dans Firebase. Contactez l\'administrateur.';
+    } else if (error.code === 'auth/operation-not-allowed') {
+      message = 'La connexion Google n\'est pas activee dans Firebase';
+    } else if (error.message) {
+      message = error.message;
     }
     return { user: null, error: message };
   }
+};
+
+// Check for redirect result on page load
+export const checkGoogleRedirectResult = async () => {
+  try {
+    const pendingRedirect = await AsyncStorage.getItem('google_auth_redirect');
+    if (pendingRedirect === 'pending') {
+      console.log('[Google Auth] Checking redirect result...');
+      await AsyncStorage.removeItem('google_auth_redirect');
+      
+      const result = await getRedirectResult(auth);
+      if (result?.user) {
+        console.log('[Google Auth] Redirect success:', result.user.email);
+        return { user: result.user, error: null };
+      }
+    }
+  } catch (error: any) {
+    console.log('[Google Auth] Redirect result error:', error);
+  }
+  return { user: null, error: null };
 };
 
 // Password Reset

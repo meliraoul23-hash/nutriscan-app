@@ -68,14 +68,19 @@ export default function AuthScreen() {
   const handleGoogleLogin = async () => {
     setError('');
     setLoading(true);
+    console.log('[Auth Screen] Starting Google login...');
     try {
       const result = await loginWithGoogle();
+      console.log('[Auth Screen] Google login result:', result);
       if (result.success) {
+        console.log('[Auth Screen] Google login successful, navigating back...');
         router.back();
       } else if (result.error) {
+        console.log('[Auth Screen] Google login error:', result.error);
         setError(result.error);
       }
     } catch (err: any) {
+      console.log('[Auth Screen] Google login exception:', err);
       setError(err.message || 'Erreur Google');
     } finally {
       setLoading(false);
