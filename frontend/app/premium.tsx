@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +17,15 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../src/contexts/AuthContext';
 import { createCheckoutSessionAPI } from '../src/services/api';
 import { colors } from '../src/styles/colors';
+
+// Get base URL for redirects - works on both web and mobile
+const getBaseUrl = () => {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  // For mobile, use the backend URL from env
+  return process.env.EXPO_PUBLIC_BACKEND_URL || 'https://nutriscan-167.preview.emergentagent.com';
+};
 
 const FEATURES = [
   { icon: 'restaurant', name: 'Menu IA personnalise', desc: 'Un menu hebdomadaire adapte a vos objectifs' },
@@ -62,8 +72,9 @@ export default function PremiumScreen() {
     setLoading(true);
     try {
       // Use dynamic URL for deployment compatibility
-      const successUrl = `${window.location.origin}/?payment=success`;
-      const cancelUrl = `${window.location.origin}/?payment=cancelled`;
+      const baseUrl = getBaseUrl();
+      const successUrl = `${baseUrl}/?payment=success`;
+      const cancelUrl = `${baseUrl}/?payment=cancelled`;
       
       const { checkout_url } = await createCheckoutSessionAPI(
         selectedPlan,
