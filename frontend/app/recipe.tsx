@@ -922,14 +922,14 @@ export default function RecipeDetailScreen() {
           </View>
 
           {/* Voice Hint */}
-          {voiceEnabled && (
+          {voiceEnabled ? (
             <View style={cookingStyles.voiceHint}>
               <View style={cookingStyles.voiceIndicator} />
               <Text style={cookingStyles.voiceHintText}>
                 Dites "Suivant", "Precedent" ou "Repeter"
               </Text>
             </View>
-          )}
+          ) : null}
         </View>
       </Modal>
     );
