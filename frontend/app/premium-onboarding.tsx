@@ -9,12 +9,14 @@ import {
   TextInput,
   Dimensions,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { colors } from '../src/styles/colors';
 import { useAuth } from '../src/contexts/AuthContext';
+import { saveUserProfileAPI } from '../src/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -46,6 +48,7 @@ export default function PremiumOnboardingScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [profile, setProfile] = useState<UserProfile>({
     sex: null,
     age: '',
@@ -90,7 +93,52 @@ export default function PremiumOnboardingScreen() {
   };
 
   const saveProfile = async () => {
+    if (saving) return;
+    setSaving(true);
+    
     try {
+      const email = user?.email || '';
+      const userId = user?.user_id || '';
+      
+      // Prepare profile data for API
+      const profileData = {
+        sex: profile.sex,
+        age: parseInt(profile.age),
+        height: parseFloat(profile.height),
+        weight: parseFloat(profile.weight),
+        target_weight: parseFloat(profile.targetWeight),
+        activity_level: profile.activityLevel,
+        goal: profile.goal,
+      };
+      
+      // Save to backend
+      const response = await saveUserProfileAPI(profileData, email, userId);
+      
+      if (response.success) {
+        // Also save locally for offline access
+        const completeProfile = {
+          ...profile,
+          bmr: response.profile?.bmr || calculateBMR(),
+          tdee: response.profile?.tdee || calculateTDEE(),
+          dailyCalories: response.profile?.daily_calories || calculateCalorieTarget(),
+          createdAt: new Date().toISOString(),
+          userId: userId,
+        };
+        
+        await AsyncStorage.setItem('user_health_profile', JSON.stringify(completeProfile));
+        await AsyncStorage.setItem('premium_onboarding_complete', 'true');
+        
+        Alert.alert(
+          'Profil enregistre !',
+          `Vos besoins caloriques journaliers sont estimes a ${completeProfile.dailyCalories} kcal.`,
+          [{ text: 'Continuer', onPress: () => router.replace('/(tabs)/home') }]
+        );
+      } else {
+        throw new Error(response.message || 'Erreur lors de la sauvegarde');
+      }
+    } catch (error: any) {
+      console.log('Error saving profile:', error);
+      // Fallback to local storage only
       const completeProfile = {
         ...profile,
         bmr: calculateBMR(),
@@ -104,12 +152,12 @@ export default function PremiumOnboardingScreen() {
       await AsyncStorage.setItem('premium_onboarding_complete', 'true');
       
       Alert.alert(
-        'Profil enregistre !',
-        `Vos besoins caloriques journaliers sont estimes a ${completeProfile.dailyCalories} kcal.`,
+        'Profil enregistre localement',
+        `Vos besoins caloriques journaliers sont estimes a ${completeProfile.dailyCalories} kcal. (Mode hors-ligne)`,
         [{ text: 'Continuer', onPress: () => router.replace('/(tabs)/home') }]
       );
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible de sauvegarder le profil.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -338,14 +386,20 @@ export default function PremiumOnboardingScreen() {
       {/* Bottom Button */}
       <View style={styles.bottomContainer}>
         <TouchableOpacity
-          style={[styles.nextButton, !canProceed() && styles.nextButtonDisabled]}
+          style={[styles.nextButton, (!canProceed() || saving) && styles.nextButtonDisabled]}
           onPress={handleNext}
-          disabled={!canProceed()}
+          disabled={!canProceed() || saving}
         >
-          <Text style={styles.nextButtonText}>
-            {step === totalSteps - 1 ? 'Terminer' : 'Continuer'}
-          </Text>
-          <Ionicons name="arrow-forward" size={20} color="#FFF" />
+          {saving ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <>
+              <Text style={styles.nextButtonText}>
+                {step === totalSteps - 1 ? 'Terminer' : 'Continuer'}
+              </Text>
+              <Ionicons name="arrow-forward" size={20} color="#FFF" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>

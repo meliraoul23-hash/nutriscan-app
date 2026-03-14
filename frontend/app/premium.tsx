@@ -14,8 +14,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../src/contexts/AuthContext';
-import { createCheckoutSessionAPI } from '../src/services/api';
+import { createCheckoutSessionAPI, getUserProfileAPI } from '../src/services/api';
 import { colors } from '../src/styles/colors';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Get base URL for redirects
 // On web: uses window.location.origin
@@ -113,6 +114,38 @@ export default function PremiumScreen() {
 
   // If already premium, show success screen
   if (!checkingStatus && isPremium) {
+    // Check if user needs to complete onboarding
+    const handleContinue = async () => {
+      try {
+        // Check if profile exists locally first
+        const localProfile = await AsyncStorage.getItem('user_health_profile');
+        const onboardingComplete = await AsyncStorage.getItem('premium_onboarding_complete');
+        
+        if (!localProfile || !onboardingComplete) {
+          // Also check backend
+          if (user?.email) {
+            const response = await getUserProfileAPI(user.email, user.user_id || '');
+            if (!response.exists) {
+              // No profile, redirect to onboarding
+              router.replace('/premium-onboarding');
+              return;
+            }
+          } else {
+            // No user email, go to onboarding
+            router.replace('/premium-onboarding');
+            return;
+          }
+        }
+        
+        // Profile exists, go home
+        router.replace('/(tabs)/home');
+      } catch (error) {
+        console.log('Error checking profile:', error);
+        // On error, redirect to onboarding to be safe
+        router.replace('/premium-onboarding');
+      }
+    };
+
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
@@ -142,8 +175,8 @@ export default function PremiumScreen() {
             ))}
           </View>
 
-          <TouchableOpacity style={styles.backToHomeButton} onPress={() => router.replace('/(tabs)/home')}>
-            <Text style={styles.backToHomeText}>Retour a l'accueil</Text>
+          <TouchableOpacity style={styles.backToHomeButton} onPress={handleContinue}>
+            <Text style={styles.backToHomeText}>Continuer</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

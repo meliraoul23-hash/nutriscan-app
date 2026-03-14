@@ -2297,6 +2297,315 @@ async def transcribe_audio(audio: UploadFile = File(...)):
             except:
                 pass
 
+# ============== USER PROFILE & PROGRESS TRACKING ==============
+class UserHealthProfile(BaseModel):
+    sex: str  # 'male' or 'female'
+    age: int
+    height: float  # in cm
+    weight: float  # in kg
+    target_weight: float  # in kg
+    activity_level: str  # 'sedentary', 'light', 'moderate', 'very'
+    goal: str  # 'lose', 'maintain', 'gain'
+    bmr: Optional[int] = None  # Basal Metabolic Rate
+    tdee: Optional[int] = None  # Total Daily Energy Expenditure
+    daily_calories: Optional[int] = None  # Daily calorie target
+
+class WeightEntry(BaseModel):
+    date: str
+    weight: float
+
+class DailyStatsEntry(BaseModel):
+    date: str
+    health_score: Optional[int] = None
+    calories: Optional[int] = None
+    scans: Optional[int] = None
+
+class UserProgressResponse(BaseModel):
+    weight_history: List[WeightEntry]
+    daily_stats: List[DailyStatsEntry]
+    current_weight: Optional[float]
+    start_weight: Optional[float]
+    weight_change: Optional[float]
+    avg_health_score: Optional[int]
+    total_scans: int
+    calorie_target: Optional[int]
+
+ACTIVITY_MULTIPLIERS = {
+    'sedentary': 1.2,
+    'light': 1.375,
+    'moderate': 1.55,
+    'very': 1.725,
+}
+
+def calculate_bmr(sex: str, weight: float, height: float, age: int) -> int:
+    """Calculate Basal Metabolic Rate using Mifflin-St Jeor equation"""
+    if sex == 'male':
+        return int(10 * weight + 6.25 * height - 5 * age + 5)
+    else:
+        return int(10 * weight + 6.25 * height - 5 * age - 161)
+
+def calculate_tdee(bmr: int, activity_level: str) -> int:
+    """Calculate Total Daily Energy Expenditure"""
+    multiplier = ACTIVITY_MULTIPLIERS.get(activity_level, 1.2)
+    return int(bmr * multiplier)
+
+def calculate_calorie_target(tdee: int, goal: str) -> int:
+    """Calculate daily calorie target based on goal"""
+    if goal == 'lose':
+        return tdee - 500  # 500 calorie deficit for weight loss
+    elif goal == 'gain':
+        return tdee + 300  # 300 calorie surplus for muscle gain
+    return tdee  # Maintain
+
+
+@api_router.post("/user/profile")
+async def save_user_profile(request: Request):
+    """Save or update user health profile - Premium feature"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    if user.subscription_type != "premium":
+        raise HTTPException(status_code=403, detail="Fonctionnalité Premium requise")
+    
+    try:
+        body = await request.json()
+        
+        # Validate required fields
+        required_fields = ['sex', 'age', 'height', 'weight', 'target_weight', 'activity_level', 'goal']
+        for field in required_fields:
+            if field not in body:
+                raise HTTPException(status_code=400, detail=f"Champ requis manquant: {field}")
+        
+        # Calculate metabolic values
+        bmr = calculate_bmr(body['sex'], float(body['weight']), float(body['height']), int(body['age']))
+        tdee = calculate_tdee(bmr, body['activity_level'])
+        daily_calories = calculate_calorie_target(tdee, body['goal'])
+        
+        profile_doc = {
+            "user_id": user.email,
+            "sex": body['sex'],
+            "age": int(body['age']),
+            "height": float(body['height']),
+            "weight": float(body['weight']),
+            "target_weight": float(body['target_weight']),
+            "activity_level": body['activity_level'],
+            "goal": body['goal'],
+            "bmr": bmr,
+            "tdee": tdee,
+            "daily_calories": daily_calories,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
+        
+        # Also add this weight to weight history
+        weight_entry = {
+            "user_id": user.email,
+            "date": datetime.now(timezone.utc).strftime('%Y-%m-%d'),
+            "weight": float(body['weight']),
+            "created_at": datetime.now(timezone.utc),
+        }
+        
+        # Upsert profile
+        await db.user_profiles.update_one(
+            {"user_id": user.email},
+            {"$set": profile_doc},
+            upsert=True
+        )
+        
+        # Add weight entry (only if not already exists for today)
+        existing_weight = await db.weight_history.find_one({
+            "user_id": user.email,
+            "date": weight_entry['date']
+        })
+        if not existing_weight:
+            await db.weight_history.insert_one(weight_entry)
+        
+        logger.info(f"Saved profile for user {user.email}: BMR={bmr}, TDEE={tdee}, calories={daily_calories}")
+        
+        return {
+            "success": True,
+            "message": "Profil enregistré avec succès",
+            "profile": {
+                "bmr": bmr,
+                "tdee": tdee,
+                "daily_calories": daily_calories,
+                "goal": body['goal'],
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error saving profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/user/profile")
+async def get_user_profile(request: Request):
+    """Get user health profile"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    profile = await db.user_profiles.find_one({"user_id": user.email}, {"_id": 0})
+    
+    if not profile:
+        return {"profile": None, "exists": False}
+    
+    return {"profile": profile, "exists": True}
+
+
+@api_router.post("/user/weight")
+async def add_weight_entry(request: Request):
+    """Add a weight entry to history"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    try:
+        body = await request.json()
+        weight = float(body.get('weight', 0))
+        
+        if weight < 30 or weight > 300:
+            raise HTTPException(status_code=400, detail="Poids invalide (30-300 kg)")
+        
+        date_str = body.get('date', datetime.now(timezone.utc).strftime('%Y-%m-%d'))
+        
+        weight_entry = {
+            "user_id": user.email,
+            "date": date_str,
+            "weight": weight,
+            "created_at": datetime.now(timezone.utc),
+        }
+        
+        # Upsert to allow updating same day entry
+        await db.weight_history.update_one(
+            {"user_id": user.email, "date": date_str},
+            {"$set": weight_entry},
+            upsert=True
+        )
+        
+        # Also update current weight in profile
+        await db.user_profiles.update_one(
+            {"user_id": user.email},
+            {"$set": {"weight": weight, "updated_at": datetime.now(timezone.utc)}}
+        )
+        
+        return {"success": True, "message": f"Poids de {weight} kg enregistré", "date": date_str}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding weight: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/user/progress")
+async def get_user_progress(request: Request, days: int = 30):
+    """Get user progress data for charts - weight history, health scores, calories"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    try:
+        # Calculate date cutoff
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        # Get weight history
+        weight_history = await db.weight_history.find(
+            {"user_id": user.email, "date": {"$gte": cutoff_date}},
+            {"_id": 0, "date": 1, "weight": 1}
+        ).sort("date", 1).to_list(100)
+        
+        # Get scan history for health score and calories stats
+        scan_history = await db.scan_history.find(
+            {"user_id": user.email}
+        ).sort("timestamp", -1).limit(200).to_list(200)
+        
+        # Also try with user_id as user.user_id
+        if not scan_history:
+            scan_history = await db.scan_history.find({}).sort("timestamp", -1).limit(50).to_list(50)
+        
+        # Aggregate daily stats from scan history
+        daily_stats_map = {}
+        for scan in scan_history:
+            timestamp = scan.get('timestamp')
+            if timestamp:
+                if isinstance(timestamp, str):
+                    date_str = timestamp[:10]
+                else:
+                    date_str = timestamp.strftime('%Y-%m-%d')
+                
+                if date_str >= cutoff_date:
+                    if date_str not in daily_stats_map:
+                        daily_stats_map[date_str] = {
+                            'date': date_str,
+                            'health_scores': [],
+                            'scans': 0,
+                            'calories': 0,
+                        }
+                    
+                    daily_stats_map[date_str]['scans'] += 1
+                    if scan.get('health_score'):
+                        daily_stats_map[date_str]['health_scores'].append(scan.get('health_score'))
+        
+        # Convert to list with averaged scores
+        daily_stats = []
+        for date_str, stats in sorted(daily_stats_map.items()):
+            avg_score = int(sum(stats['health_scores']) / len(stats['health_scores'])) if stats['health_scores'] else None
+            daily_stats.append({
+                'date': date_str,
+                'health_score': avg_score,
+                'scans': stats['scans'],
+                'calories': stats.get('calories', 0),
+            })
+        
+        # Get user profile for calorie target
+        profile = await db.user_profiles.find_one({"user_id": user.email}, {"_id": 0})
+        
+        # Calculate summary stats
+        current_weight = weight_history[-1]['weight'] if weight_history else None
+        start_weight = weight_history[0]['weight'] if weight_history else None
+        weight_change = round(current_weight - start_weight, 1) if current_weight and start_weight else None
+        
+        recent_scores = [s['health_score'] for s in daily_stats[-7:] if s.get('health_score')]
+        avg_health_score = int(sum(recent_scores) / len(recent_scores)) if recent_scores else None
+        
+        total_scans = sum(s['scans'] for s in daily_stats)
+        
+        return {
+            "weight_history": weight_history,
+            "daily_stats": daily_stats,
+            "current_weight": current_weight,
+            "start_weight": start_weight,
+            "weight_change": weight_change,
+            "avg_health_score": avg_health_score,
+            "total_scans": total_scans,
+            "calorie_target": profile.get('daily_calories') if profile else None,
+            "profile": profile,
+        }
+    except Exception as e:
+        logger.error(f"Error getting progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.delete("/user/profile")
+async def delete_user_profile(request: Request):
+    """Delete user health profile and associated data"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    await db.user_profiles.delete_one({"user_id": user.email})
+    await db.weight_history.delete_many({"user_id": user.email})
+    
+    return {"success": True, "message": "Profil et historique supprimés"}
+
+
 # Include router and middleware
 app.include_router(api_router)
 

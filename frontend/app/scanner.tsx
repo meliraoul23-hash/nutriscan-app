@@ -1,5 +1,5 @@
-// Scanner Screen
-import React, { useState, useEffect } from 'react';
+// Scanner Screen - Fixed duplicate scan bug with useRef and debounce
+import React, { useState, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,28 +7,67 @@ import { useRouter } from 'expo-router';
 import { useApp } from '../src/contexts/AppContext';
 import { colors } from '../src/styles/colors';
 
+// Debounce delay to prevent duplicate scans (in ms)
+const SCAN_DEBOUNCE_DELAY = 2000;
+
 export default function ScannerScreen() {
   const router = useRouter();
   const { fetchProduct, productLoading } = useApp();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
+  
+  // Use refs to prevent race conditions with async state updates
+  const isProcessingRef = useRef(false);
+  const lastScannedBarcodeRef = useRef<string | null>(null);
+  const lastScanTimeRef = useRef<number>(0);
 
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
-    if (scanned || productLoading) return;
+  const handleBarCodeScanned = useCallback(async ({ data }: { data: string }) => {
+    const now = Date.now();
+    
+    // Prevent duplicate scans using multiple checks:
+    // 1. Check if already processing (ref is synchronous, unlike state)
+    // 2. Check if same barcode was scanned recently
+    // 3. Check if within debounce period
+    if (isProcessingRef.current) {
+      console.log('Already processing a scan, ignoring...');
+      return;
+    }
+    
+    if (productLoading) {
+      console.log('Product loading, ignoring scan...');
+      return;
+    }
+    
+    if (data === lastScannedBarcodeRef.current && (now - lastScanTimeRef.current) < SCAN_DEBOUNCE_DELAY) {
+      console.log('Same barcode scanned too quickly, ignoring...');
+      return;
+    }
+    
+    // Lock immediately using ref (synchronous)
+    isProcessingRef.current = true;
+    lastScannedBarcodeRef.current = data;
+    lastScanTimeRef.current = now;
     setScanned(true);
     
     try {
+      console.log('Processing barcode:', data);
       await fetchProduct(data);
       router.replace('/product');
     } catch (error) {
       console.log('Scan error:', error);
+      // Reset processing state on error
+      isProcessingRef.current = false;
       setScanned(false);
     }
-  };
+  }, [fetchProduct, productLoading, router]);
 
-  const handleScanAgain = () => {
+  const handleScanAgain = useCallback(() => {
+    // Reset all scan states
+    isProcessingRef.current = false;
+    lastScannedBarcodeRef.current = null;
+    lastScanTimeRef.current = 0;
     setScanned(false);
-  };
+  }, []);
 
   if (!permission) {
     return (

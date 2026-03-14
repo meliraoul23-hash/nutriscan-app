@@ -1,5 +1,5 @@
 // Progress Dashboard Screen - Track weight, health score, and calories
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   Dimensions,
   TextInput,
   Alert,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,6 +18,7 @@ import { useRouter } from 'expo-router';
 import { LineChart } from 'react-native-chart-kit';
 import { colors } from '../src/styles/colors';
 import { useAuth } from '../src/contexts/AuthContext';
+import { getUserProgressAPI, addWeightEntryAPI, UserProgressData } from '../src/services/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -32,105 +35,64 @@ interface UserProfile {
   dailyCalories: number;
 }
 
-interface WeightEntry {
-  date: string;
-  weight: number;
-}
-
-interface DailyStats {
-  date: string;
-  healthScore: number;
-  calories: number;
-  scans: number;
-}
-
 export default function ProgressDashboardScreen() {
   const router = useRouter();
   const { isPremium, user } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [weightHistory, setWeightHistory] = useState<WeightEntry[]>([]);
-  const [dailyStats, setDailyStats] = useState<DailyStats[]>([]);
+  const [progressData, setProgressData] = useState<UserProgressData | null>(null);
   const [newWeight, setNewWeight] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState<'7' | '30' | '90'>('30');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [addingWeight, setAddingWeight] = useState(false);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedPeriod]);
 
   const loadData = async () => {
     try {
-      // Load user profile
+      // Load user profile from local storage
       const profileData = await AsyncStorage.getItem('user_health_profile');
       if (profileData) {
         setProfile(JSON.parse(profileData));
       }
 
-      // Load weight history
-      const weightData = await AsyncStorage.getItem('weight_history');
-      if (weightData) {
-        setWeightHistory(JSON.parse(weightData));
-      } else {
-        // Generate mock data for demo
-        const mockWeight = generateMockWeightData();
-        setWeightHistory(mockWeight);
-        await AsyncStorage.setItem('weight_history', JSON.stringify(mockWeight));
-      }
-
-      // Load daily stats
-      const statsData = await AsyncStorage.getItem('daily_stats');
-      if (statsData) {
-        setDailyStats(JSON.parse(statsData));
-      } else {
-        // Generate mock data for demo
-        const mockStats = generateMockStatsData();
-        setDailyStats(mockStats);
-        await AsyncStorage.setItem('daily_stats', JSON.stringify(mockStats));
+      // Fetch progress data from backend
+      if (user?.email) {
+        const data = await getUserProgressAPI(
+          user.email,
+          user.user_id || '',
+          parseInt(selectedPeriod)
+        );
+        setProgressData(data);
+        
+        // Update local profile with backend data if available
+        if (data.profile) {
+          const updatedProfile = {
+            ...data.profile,
+            dailyCalories: data.profile.daily_calories,
+            targetWeight: data.profile.target_weight?.toString(),
+            activityLevel: data.profile.activity_level,
+          };
+          setProfile(updatedProfile as any);
+        }
       }
     } catch (error) {
-      console.log('Error loading data:', error);
+      console.log('Error loading progress data:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const generateMockWeightData = (): WeightEntry[] => {
-    const data: WeightEntry[] = [];
-    const startWeight = 75;
-    const today = new Date();
-    
-    for (let i = 90; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      const variation = Math.random() * 0.8 - 0.4; // Random variation
-      const trend = -0.05 * (90 - i); // Slight downward trend
-      data.push({
-        date: date.toISOString().split('T')[0],
-        weight: Math.round((startWeight + trend + variation) * 10) / 10,
-      });
-    }
-    return data;
-  };
-
-  const generateMockStatsData = (): DailyStats[] => {
-    const data: DailyStats[] = [];
-    const today = new Date();
-    
-    for (let i = 30; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
-      data.push({
-        date: date.toISOString().split('T')[0],
-        healthScore: Math.round(60 + Math.random() * 30),
-        calories: Math.round(1500 + Math.random() * 800),
-        scans: Math.round(Math.random() * 8),
-      });
-    }
-    return data;
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadData();
+  }, [selectedPeriod]);
 
   const addWeight = async () => {
-    if (!newWeight) return;
+    if (!newWeight || addingWeight) return;
     
     const weight = parseFloat(newWeight);
     if (isNaN(weight) || weight < 30 || weight > 300) {
@@ -138,63 +100,49 @@ export default function ProgressDashboardScreen() {
       return;
     }
 
-    const newEntry: WeightEntry = {
-      date: new Date().toISOString().split('T')[0],
-      weight,
-    };
-
-    const updatedHistory = [...weightHistory.filter(w => w.date !== newEntry.date), newEntry];
-    updatedHistory.sort((a, b) => a.date.localeCompare(b.date));
+    setAddingWeight(true);
     
-    setWeightHistory(updatedHistory);
-    await AsyncStorage.setItem('weight_history', JSON.stringify(updatedHistory));
-    setNewWeight('');
-    Alert.alert('Enregistre', `Poids de ${weight} kg enregistre !`);
+    try {
+      if (user?.email) {
+        await addWeightEntryAPI(weight, user.email, user.user_id || '');
+      }
+      
+      setNewWeight('');
+      Alert.alert('Enregistre', `Poids de ${weight} kg enregistre !`);
+      await loadData();
+    } catch (error) {
+      console.log('Error adding weight:', error);
+      Alert.alert('Erreur', 'Impossible d\'enregistrer le poids');
+    } finally {
+      setAddingWeight(false);
+    }
   };
 
-  const getFilteredData = (data: any[], days: number) => {
-    const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - days);
-    return data.filter(d => new Date(d.date) >= cutoffDate);
+  // Get chart data from progress data
+  const weightHistory = progressData?.weight_history || [];
+  const dailyStats = progressData?.daily_stats || [];
+
+  // Prepare chart data with proper sampling
+  const getChartPoints = (data: any[], maxPoints: number = 7) => {
+    if (data.length <= maxPoints) return data;
+    const step = Math.ceil(data.length / maxPoints);
+    return data.filter((_, i) => i % step === 0);
   };
 
-  const getChartData = (data: number[], labels: string[]) => ({
-    labels,
-    datasets: [{ data, strokeWidth: 2 }],
-  });
+  const weightChartPoints = getChartPoints(weightHistory);
+  const weightChartLabels = weightChartPoints.map(w => w.date?.slice(5) || '');
+  const weightChartData = weightChartPoints.map(w => w.weight || 0);
 
-  const filteredWeightHistory = getFilteredData(weightHistory, parseInt(selectedPeriod));
-  const filteredDailyStats = getFilteredData(dailyStats, parseInt(selectedPeriod));
+  const statsChartPoints = getChartPoints(dailyStats);
+  const healthScoreLabels = statsChartPoints.map(s => s.date?.slice(5) || '');
+  const healthScoreData = statsChartPoints.map(s => s.health_score || 0).filter(s => s > 0);
 
-  // Prepare chart data
-  const weightChartLabels = filteredWeightHistory.length > 7 
-    ? filteredWeightHistory.filter((_, i) => i % Math.ceil(filteredWeightHistory.length / 7) === 0).map(w => w.date.slice(5))
-    : filteredWeightHistory.map(w => w.date.slice(5));
-  
-  const weightChartData = filteredWeightHistory.length > 7
-    ? filteredWeightHistory.filter((_, i) => i % Math.ceil(filteredWeightHistory.length / 7) === 0).map(w => w.weight)
-    : filteredWeightHistory.map(w => w.weight);
-
-  const healthScoreLabels = filteredDailyStats.length > 7
-    ? filteredDailyStats.filter((_, i) => i % Math.ceil(filteredDailyStats.length / 7) === 0).map(s => s.date.slice(5))
-    : filteredDailyStats.map(s => s.date.slice(5));
-
-  const healthScoreData = filteredDailyStats.length > 7
-    ? filteredDailyStats.filter((_, i) => i % Math.ceil(filteredDailyStats.length / 7) === 0).map(s => s.healthScore)
-    : filteredDailyStats.map(s => s.healthScore);
-
-  const caloriesData = filteredDailyStats.length > 7
-    ? filteredDailyStats.filter((_, i) => i % Math.ceil(filteredDailyStats.length / 7) === 0).map(s => s.calories)
-    : filteredDailyStats.map(s => s.calories);
-
-  // Calculate stats
-  const currentWeight = weightHistory.length > 0 ? weightHistory[weightHistory.length - 1].weight : 0;
-  const startWeight = weightHistory.length > 0 ? weightHistory[0].weight : 0;
-  const weightChange = Math.round((currentWeight - startWeight) * 10) / 10;
-  const avgHealthScore = dailyStats.length > 0 
-    ? Math.round(dailyStats.slice(-7).reduce((sum, s) => sum + s.healthScore, 0) / Math.min(7, dailyStats.length))
-    : 0;
-  const totalScans = dailyStats.reduce((sum, s) => sum + s.scans, 0);
+  // Summary stats
+  const currentWeight = progressData?.current_weight || 0;
+  const weightChange = progressData?.weight_change || 0;
+  const avgHealthScore = progressData?.avg_health_score || 0;
+  const totalScans = progressData?.total_scans || 0;
+  const calorieTarget = progressData?.calorie_target || profile?.dailyCalories || 0;
 
   const chartConfig = {
     backgroundColor: colors.surface,
@@ -222,6 +170,17 @@ export default function ProgressDashboardScreen() {
     );
   }
 
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Chargement de vos donnees...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -235,7 +194,13 @@ export default function ProgressDashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+        }
+      >
         {/* Period Selector */}
         <View style={styles.periodSelector}>
           {(['7', '30', '90'] as const).map((period) => (
@@ -254,22 +219,24 @@ export default function ProgressDashboardScreen() {
         {/* Stats Cards */}
         <View style={styles.statsGrid}>
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{currentWeight} kg</Text>
+            <Text style={styles.statValue}>{currentWeight > 0 ? `${currentWeight} kg` : '-- kg'}</Text>
             <Text style={styles.statLabel}>Poids actuel</Text>
-            <View style={[styles.statBadge, { backgroundColor: weightChange <= 0 ? '#E8F5E9' : '#FFEBEE' }]}>
-              <Ionicons 
-                name={weightChange <= 0 ? 'trending-down' : 'trending-up'} 
-                size={14} 
-                color={weightChange <= 0 ? '#4CAF50' : '#F44336'} 
-              />
-              <Text style={[styles.statBadgeText, { color: weightChange <= 0 ? '#4CAF50' : '#F44336' }]}>
-                {weightChange > 0 ? '+' : ''}{weightChange} kg
-              </Text>
-            </View>
+            {weightChange !== 0 && (
+              <View style={[styles.statBadge, { backgroundColor: weightChange <= 0 ? '#E8F5E9' : '#FFEBEE' }]}>
+                <Ionicons 
+                  name={weightChange <= 0 ? 'trending-down' : 'trending-up'} 
+                  size={14} 
+                  color={weightChange <= 0 ? '#4CAF50' : '#F44336'} 
+                />
+                <Text style={[styles.statBadgeText, { color: weightChange <= 0 ? '#4CAF50' : '#F44336' }]}>
+                  {weightChange > 0 ? '+' : ''}{weightChange} kg
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{avgHealthScore}</Text>
+            <Text style={styles.statValue}>{avgHealthScore > 0 ? avgHealthScore : '--'}</Text>
             <Text style={styles.statLabel}>Score sante moyen</Text>
             <View style={[styles.statBadge, { backgroundColor: '#E3F2FD' }]}>
               <Ionicons name="star" size={14} color="#2196F3" />
@@ -278,7 +245,7 @@ export default function ProgressDashboardScreen() {
           </View>
 
           <View style={styles.statCard}>
-            <Text style={styles.statValue}>{profile?.dailyCalories || '-'}</Text>
+            <Text style={styles.statValue}>{calorieTarget > 0 ? calorieTarget : '--'}</Text>
             <Text style={styles.statLabel}>Objectif kcal/jour</Text>
             <View style={[styles.statBadge, { backgroundColor: '#FFF3E0' }]}>
               <Ionicons name="flame" size={14} color="#FF9800" />
@@ -311,8 +278,16 @@ export default function ProgressDashboardScreen() {
               />
               <Text style={styles.weightUnit}>kg</Text>
             </View>
-            <TouchableOpacity style={styles.addWeightButton} onPress={addWeight}>
-              <Ionicons name="add" size={24} color="#FFF" />
+            <TouchableOpacity 
+              style={[styles.addWeightButton, addingWeight && styles.addWeightButtonDisabled]} 
+              onPress={addWeight}
+              disabled={addingWeight}
+            >
+              {addingWeight ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Ionicons name="add" size={24} color="#FFF" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -322,7 +297,10 @@ export default function ProgressDashboardScreen() {
           <Text style={styles.sectionTitle}>Evolution du poids</Text>
           {weightChartData.length > 1 ? (
             <LineChart
-              data={getChartData(weightChartData, weightChartLabels)}
+              data={{
+                labels: weightChartLabels,
+                datasets: [{ data: weightChartData, strokeWidth: 2 }],
+              }}
               width={CHART_WIDTH}
               height={200}
               chartConfig={chartConfig}
@@ -332,7 +310,11 @@ export default function ProgressDashboardScreen() {
           ) : (
             <View style={styles.noData}>
               <Ionicons name="analytics-outline" size={48} color={colors.textSecondary} />
-              <Text style={styles.noDataText}>Pas assez de donnees</Text>
+              <Text style={styles.noDataText}>
+                {weightHistory.length === 0 
+                  ? 'Enregistrez votre poids pour voir votre progression'
+                  : 'Pas assez de donnees'}
+              </Text>
             </View>
           )}
         </View>
@@ -342,7 +324,10 @@ export default function ProgressDashboardScreen() {
           <Text style={styles.sectionTitle}>Score sante moyen</Text>
           {healthScoreData.length > 1 ? (
             <LineChart
-              data={getChartData(healthScoreData, healthScoreLabels)}
+              data={{
+                labels: healthScoreLabels,
+                datasets: [{ data: healthScoreData, strokeWidth: 2 }],
+              }}
               width={CHART_WIDTH}
               height={200}
               chartConfig={{
@@ -356,35 +341,6 @@ export default function ProgressDashboardScreen() {
             <View style={styles.noData}>
               <Ionicons name="analytics-outline" size={48} color={colors.textSecondary} />
               <Text style={styles.noDataText}>Scannez des produits pour voir vos statistiques</Text>
-            </View>
-          )}
-        </View>
-
-        {/* Calories Chart */}
-        <View style={styles.chartSection}>
-          <Text style={styles.sectionTitle}>Calories consommees</Text>
-          {caloriesData.length > 1 ? (
-            <LineChart
-              data={getChartData(caloriesData, healthScoreLabels)}
-              width={CHART_WIDTH}
-              height={200}
-              chartConfig={{
-                ...chartConfig,
-                color: (opacity = 1) => `rgba(255, 152, 0, ${opacity})`,
-              }}
-              bezier
-              style={styles.chart}
-            />
-          ) : (
-            <View style={styles.noData}>
-              <Ionicons name="analytics-outline" size={48} color={colors.textSecondary} />
-              <Text style={styles.noDataText}>Pas de donnees de calories</Text>
-            </View>
-          )}
-          {profile?.dailyCalories && (
-            <View style={styles.targetLine}>
-              <View style={styles.targetDot} />
-              <Text style={styles.targetText}>Objectif: {profile.dailyCalories} kcal</Text>
             </View>
           )}
         </View>
@@ -431,6 +387,10 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
   scrollView: { flex: 1 },
   
+  // Loading
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { fontSize: 16, color: colors.textSecondary, marginTop: 12 },
+  
   // Premium required
   premiumRequired: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   premiumTitle: { fontSize: 24, fontWeight: '700', color: colors.text, marginTop: 20 },
@@ -461,15 +421,13 @@ const styles = StyleSheet.create({
   weightInput: { flex: 1, fontSize: 18, fontWeight: '600', color: colors.text, paddingVertical: 14 },
   weightUnit: { fontSize: 16, color: colors.textSecondary },
   addWeightButton: { width: 52, height: 52, backgroundColor: colors.primary, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  addWeightButtonDisabled: { opacity: 0.6 },
   
   // Charts
   chartSection: { paddingHorizontal: 16, marginTop: 24 },
   chart: { borderRadius: 16, marginTop: 8 },
   noData: { height: 200, backgroundColor: colors.surface, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  noDataText: { fontSize: 14, color: colors.textSecondary, marginTop: 12 },
-  targetLine: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  targetDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FF9800' },
-  targetText: { fontSize: 13, color: colors.textSecondary },
+  noDataText: { fontSize: 14, color: colors.textSecondary, marginTop: 12, textAlign: 'center', paddingHorizontal: 20 },
   
   // Profile summary
   profileSummary: { paddingHorizontal: 16, marginTop: 24 },

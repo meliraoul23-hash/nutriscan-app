@@ -154,6 +154,18 @@ export default function ProfileScreen() {
         {/* Premium Features */}
         {isPremium && (
           <>
+            {/* Progress Dashboard */}
+            <TouchableOpacity style={styles.progressButton} onPress={() => router.push('/progress')}>
+              <View style={[styles.coachIconContainer, { backgroundColor: '#2196F3' }]}>
+                <Ionicons name="analytics" size={28} color="#FFF" />
+              </View>
+              <View style={styles.coachButtonInfo}>
+                <Text style={styles.coachButtonTitle}>Ma Progression</Text>
+                <Text style={styles.coachButtonSubtitle}>Suivez votre poids et vos scores</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+            </TouchableOpacity>
+
             {/* Coach AI */}
             <TouchableOpacity style={styles.coachButtonLarge} onPress={() => router.push('/coach')}>
               <View style={styles.coachIconContainer}>
@@ -229,6 +241,7 @@ const styles = StyleSheet.create({
   premiumButton: { backgroundColor: colors.premium, paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 16 },
   premiumButtonText: { color: '#000', fontSize: 14, fontWeight: '600' },
   coachButtonLarge: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 16, borderRadius: 16, marginTop: 8 },
+  progressButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: 16, borderRadius: 16, marginTop: 8, marginBottom: 8 },
   coachIconContainer: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#9C27B0', justifyContent: 'center', alignItems: 'center' },
   coachButtonInfo: { flex: 1, marginLeft: 16 },
   coachButtonTitle: { fontSize: 16, fontWeight: '700', color: colors.text },

@@ -38,7 +38,8 @@
           "cameraPermission": "Allow NutriScan to access your camera to scan product barcodes."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true

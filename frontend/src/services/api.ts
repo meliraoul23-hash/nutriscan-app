@@ -202,4 +202,101 @@ export const getProductWithPreferencesAPI = async (barcode: string, email?: stri
   return response.data;
 };
 
+// ============== USER PROFILE & PROGRESS APIs ==============
+
+export interface UserHealthProfile {
+  sex: 'male' | 'female';
+  age: number;
+  height: number;
+  weight: number;
+  target_weight: number;
+  activity_level: 'sedentary' | 'light' | 'moderate' | 'very';
+  goal: 'lose' | 'maintain' | 'gain';
+  bmr?: number;
+  tdee?: number;
+  daily_calories?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WeightEntry {
+  date: string;
+  weight: number;
+}
+
+export interface DailyStats {
+  date: string;
+  health_score?: number;
+  calories?: number;
+  scans?: number;
+}
+
+export interface UserProgressData {
+  weight_history: WeightEntry[];
+  daily_stats: DailyStats[];
+  current_weight?: number;
+  start_weight?: number;
+  weight_change?: number;
+  avg_health_score?: number;
+  total_scans: number;
+  calorie_target?: number;
+  profile?: UserHealthProfile;
+}
+
+// Save user health profile
+export const saveUserProfileAPI = async (
+  profile: Partial<UserHealthProfile>,
+  email: string,
+  userId: string
+): Promise<{ success: boolean; message: string; profile?: any }> => {
+  const params = new URLSearchParams({ email, user_id: userId });
+  const response = await api.post(`/user/profile?${params.toString()}`, profile);
+  return response.data;
+};
+
+// Get user health profile
+export const getUserProfileAPI = async (
+  email: string,
+  userId: string
+): Promise<{ profile: UserHealthProfile | null; exists: boolean }> => {
+  const params = new URLSearchParams({ email, user_id: userId });
+  const response = await api.get(`/user/profile?${params.toString()}`);
+  return response.data;
+};
+
+// Add weight entry
+export const addWeightEntryAPI = async (
+  weight: number,
+  email: string,
+  userId: string,
+  date?: string
+): Promise<{ success: boolean; message: string }> => {
+  const params = new URLSearchParams({ email, user_id: userId });
+  const body: any = { weight };
+  if (date) body.date = date;
+  const response = await api.post(`/user/weight?${params.toString()}`, body);
+  return response.data;
+};
+
+// Get user progress data for charts
+export const getUserProgressAPI = async (
+  email: string,
+  userId: string,
+  days: number = 30
+): Promise<UserProgressData> => {
+  const params = new URLSearchParams({ email, user_id: userId, days: days.toString() });
+  const response = await api.get(`/user/progress?${params.toString()}`);
+  return response.data;
+};
+
+// Delete user profile
+export const deleteUserProfileAPI = async (
+  email: string,
+  userId: string
+): Promise<{ success: boolean; message: string }> => {
+  const params = new URLSearchParams({ email, user_id: userId });
+  const response = await api.delete(`/user/profile?${params.toString()}`);
+  return response.data;
+};
+
 export default api;
