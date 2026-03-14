@@ -2652,7 +2652,7 @@ PREMIUM_RECIPES = [
         "title": "Buddha Bowl Mediterraneen",
         "subtitle": "Bowl equilibre aux saveurs du sud",
         "heroImage": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800",
-        "videoUrl": "",
+        "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-woman-mixing-vegetables-in-a-bowl-43299-large.mp4",
         "prepTime": 15,
         "totalTime": 35,
         "servings": 2,
@@ -2680,6 +2680,7 @@ PREMIUM_RECIPES = [
                 "duration": 15,
                 "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400",
                 "tip": "Le quinoa est pret quand les grains sont translucides.",
+                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-woman-seasoning-a-salad-43300-large.mp4"
             },
             {
                 "id": "step2",
@@ -2688,6 +2689,7 @@ PREMIUM_RECIPES = [
                 "duration": 5,
                 "image": "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400",
                 "tip": "Arrosez l'avocat de citron pour eviter qu'il ne s'oxyde.",
+                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-hands-cutting-a-carrot-on-a-cutting-board-43298-large.mp4"
             },
             {
                 "id": "step3",
@@ -2704,6 +2706,7 @@ PREMIUM_RECIPES = [
                 "duration": 3,
                 "image": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400",
                 "tip": "Salez et poivrez selon votre gout.",
+                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-woman-pouring-olive-oil-on-a-salad-43297-large.mp4"
             }
         ],
         "author": "Chef NutriScan",
@@ -2715,7 +2718,7 @@ PREMIUM_RECIPES = [
         "title": "Saumon Teriyaki",
         "subtitle": "Filet de saumon glace aux saveurs japonaises",
         "heroImage": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800",
-        "videoUrl": "",
+        "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-person-cooking-on-a-pan-with-fire-1137-large.mp4",
         "prepTime": 10,
         "totalTime": 25,
         "servings": 2,
@@ -2755,6 +2758,7 @@ PREMIUM_RECIPES = [
                 "duration": 8,
                 "image": "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=400",
                 "tip": "Ne retournez le saumon qu'une seule fois pour une belle croute.",
+                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-person-cooking-on-a-pan-with-fire-1137-large.mp4"
             },
             {
                 "id": "step4",
@@ -2773,7 +2777,7 @@ PREMIUM_RECIPES = [
         "title": "Smoothie Bowl Tropical",
         "subtitle": "Petit-dejeuner vitamine et colore",
         "heroImage": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=800",
-        "videoUrl": "",
+        "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-pouring-milk-into-a-cup-of-coffee-725-large.mp4",
         "prepTime": 10,
         "totalTime": 10,
         "servings": 1,
