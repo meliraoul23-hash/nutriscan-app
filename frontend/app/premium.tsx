@@ -62,11 +62,8 @@ export default function PremiumScreen() {
     setLoading(true);
     try {
       // Use dynamic URL for deployment compatibility
-      const baseUrl = typeof window !== 'undefined' && window.location 
-        ? window.location.origin 
-        : 'https://nutriscan-167.preview.emergentagent.com';
-      const successUrl = `${baseUrl}/?payment=success`;
-      const cancelUrl = `${baseUrl}/?payment=cancelled`;
+      const successUrl = `${window.location.origin}/?payment=success`;
+      const cancelUrl = `${window.location.origin}/?payment=cancelled`;
       
       const { checkout_url } = await createCheckoutSessionAPI(
         selectedPlan,
