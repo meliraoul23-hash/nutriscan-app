@@ -67,7 +67,7 @@ export default function PreferencesScreen() {
   const [offlineCacheSize, setOfflineCacheSize] = useState(0);
   const [downloadingCache, setDownloadingCache] = useState(false);
 
-  const isPremium = user?.subscription_type === 'premium';
+  const { isPremium } = useAuth();
 
   useEffect(() => {
     loadPreferences();

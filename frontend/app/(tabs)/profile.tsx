@@ -1,5 +1,5 @@
 // Profile Tab Screen
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,16 +18,47 @@ import { colors } from '../../src/styles/colors';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, isPremium, testPremiumMode, toggleTestPremiumMode, forceRefreshPremium } = useAuth();
   const { favorites, healthGoals, weeklyMenu, shoppingList } = useApp();
+  
+  // Secret button: triple tap counter
+  const tapCountRef = useRef(0);
+  const lastTapTimeRef = useRef(0);
+
+  const handleAvatarPress = () => {
+    const now = Date.now();
+    // Reset if more than 500ms between taps
+    if (now - lastTapTimeRef.current > 500) {
+      tapCountRef.current = 0;
+    }
+    lastTapTimeRef.current = now;
+    tapCountRef.current += 1;
+    
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
+      toggleTestPremiumMode();
+      Alert.alert(
+        testPremiumMode ? 'Mode Test Desactive' : 'Mode Test Premium Active',
+        testPremiumMode 
+          ? 'Vous etes revenu au mode normal.' 
+          : 'Vous pouvez maintenant tester toutes les fonctionnalites Premium!',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleRefreshPremium = async () => {
+    await forceRefreshPremium();
+    Alert.alert('Statut mis a jour', 'Votre statut premium a ete actualise.');
+  };
 
   const handleLogout = () => {
     Alert.alert(
-      'Déconnexion',
-      'Êtes-vous sûr de vouloir vous déconnecter ?',
+      'Deconnexion',
+      'Etes-vous sur de vouloir vous deconnecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Déconnexion', style: 'destructive', onPress: logout },
+        { text: 'Deconnexion', style: 'destructive', onPress: logout },
       ]
     );
   };
@@ -39,7 +70,7 @@ export default function ProfileScreen() {
           <Ionicons name="person-circle-outline" size={80} color={colors.textSecondary} />
           <Text style={styles.notLoggedInTitle}>Connectez-vous</Text>
           <Text style={styles.notLoggedInText}>
-            Créez un compte pour accéder à toutes les fonctionnalités
+            Creez un compte pour acceder a toutes les fonctionnalites
           </Text>
           <TouchableOpacity style={styles.loginButton} onPress={() => router.push('/auth')}>
             <Text style={styles.loginButtonText}>Se connecter</Text>
@@ -49,32 +80,42 @@ export default function ProfileScreen() {
     );
   }
 
-  const isPremium = user.subscription_type === 'premium';
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         {/* Profile Header */}
         <View style={styles.profileHeader}>
-          {user.picture ? (
-            <Image source={{ uri: user.picture }} style={styles.profilePicture} />
-          ) : (
-            <View style={styles.profilePictureAlt}>
-              <Text style={styles.profileInitial}>{user.name?.charAt(0).toUpperCase() || 'U'}</Text>
-            </View>
-          )}
+          <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8}>
+            {user.picture ? (
+              <Image source={{ uri: user.picture }} style={styles.profilePicture} />
+            ) : (
+              <View style={styles.profilePictureAlt}>
+                <Text style={styles.profileInitial}>{user.name?.charAt(0).toUpperCase() || 'U'}</Text>
+              </View>
+            )}
+            {testPremiumMode && (
+              <View style={styles.testBadge}>
+                <Text style={styles.testBadgeText}>TEST</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <Text style={styles.profileName}>{user.name}</Text>
           <Text style={styles.profileEmail}>{user.email}</Text>
-          <View style={[styles.subscriptionBadge, isPremium && styles.subscriptionBadgePremium]}>
+          <TouchableOpacity 
+            style={[styles.subscriptionBadge, isPremium && styles.subscriptionBadgePremium]}
+            onPress={handleRefreshPremium}
+            activeOpacity={0.7}
+          >
             <Ionicons
               name={isPremium ? 'star' : 'star-outline'}
               size={16}
               color={isPremium ? colors.premium : colors.textSecondary}
             />
             <Text style={[styles.subscriptionText, isPremium && styles.subscriptionTextPremium]}>
-              {isPremium ? 'Premium' : 'Gratuit'}
+              {isPremium ? (testPremiumMode ? 'Premium (Test)' : 'Premium') : 'Gratuit'}
             </Text>
-          </View>
+            <Ionicons name="refresh-outline" size={12} color={colors.textSecondary} style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
         </View>
 
         {/* Quick Actions */}
@@ -175,6 +216,8 @@ const styles = StyleSheet.create({
   subscriptionBadgePremium: { backgroundColor: '#FFF8E1' },
   subscriptionText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500', marginLeft: 4 },
   subscriptionTextPremium: { color: colors.premium },
+  testBadge: { position: 'absolute', bottom: -4, right: -4, backgroundColor: '#FF5722', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  testBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '700' },
   quickActionsContainer: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 20 },
   quickActionButton: { alignItems: 'center', backgroundColor: colors.surface, padding: 16, borderRadius: 16, minWidth: 90 },
   quickActionText: { fontSize: 12, color: colors.text, fontWeight: '500', marginTop: 8 },

@@ -26,9 +26,8 @@ const getScoreColor = (score: number): string => {
 
 export default function HistoryScreen() {
   const router = useRouter();
-  const { scanHistory, fetchProduct, loading } = useApp();
-  const { user } = useAuth();
-  const isPremium = user?.subscription_type === 'premium';
+  const { history, fetchProduct, productLoading } = useApp();
+  const { isPremium } = useAuth();
 
   const handleProductPress = async (barcode: string) => {
     try {
@@ -40,19 +39,19 @@ export default function HistoryScreen() {
   };
 
   // Limit history for free users
-  const displayHistory = isPremium ? scanHistory : (scanHistory || []).slice(0, 5);
+  const displayHistory = isPremium ? history : (history || []).slice(0, 5);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <Text style={styles.pageTitle}>Historique des scans</Text>
         
-        {loading ? (
+        {productLoading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
             <Text style={styles.loadingText}>Chargement...</Text>
           </View>
-        ) : !scanHistory || scanHistory.length === 0 ? (
+        ) : !history || history.length === 0 ? (
           <View style={styles.emptyStateLarge}>
             <Ionicons name="time-outline" size={64} color={COLORS.textSecondary} />
             <Text style={styles.emptyStateTitle}>Aucun historique</Text>
@@ -90,12 +89,12 @@ export default function HistoryScreen() {
             ))}
             
             {/* Premium upsell for free users */}
-            {!isPremium && scanHistory.length > 5 && (
+            {!isPremium && history.length > 5 && (
               <TouchableOpacity style={styles.premiumCard} onPress={() => router.push('/premium')}>
                 <Ionicons name="lock-closed" size={24} color="#FFB300" />
                 <View style={styles.premiumInfo}>
                   <Text style={styles.premiumTitle}>Voir tout l'historique</Text>
-                  <Text style={styles.premiumSubtitle}>+{scanHistory.length - 5} produits cachés</Text>
+                  <Text style={styles.premiumSubtitle}>+{history.length - 5} produits caches</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#FFB300" />
               </TouchableOpacity>
