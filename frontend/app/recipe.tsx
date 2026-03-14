@@ -1,5 +1,5 @@
 // Premium Recipe Detail Screen - NutriScan
-// Features: Parallax Hero, Video Player, Cooking Mode, Smart Timers, Portion Scaler
+// Features: Parallax Hero, Video Player, Cooking Mode with Voice Commands, Smart Timers, Portion Scaler
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -15,12 +15,14 @@ import {
   Platform,
   StatusBar,
   ActivityIndicator,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as Speech from 'expo-speech';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { colors } from '../src/styles/colors';
 import { useAuth } from '../src/contexts/AuthContext';
 
@@ -296,8 +298,33 @@ export default function RecipeDetailScreen() {
   const [currentVideoUrl, setCurrentVideoUrl] = useState('');
   const [currentVideoTitle, setCurrentVideoTitle] = useState('');
 
+  // Voice recognition state
+  const [isListening, setIsListening] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [orientation, setOrientation] = useState<'PORTRAIT' | 'LANDSCAPE'>('PORTRAIT');
+  
   // Timer intervals
   const timerIntervals = useRef<{ [key: string]: NodeJS.Timeout }>({});
+
+  // Handle orientation changes for cooking mode
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setOrientation(window.width > window.height ? 'LANDSCAPE' : 'PORTRAIT');
+    });
+    return () => subscription?.remove();
+  }, []);
+
+  // Lock to landscape when entering cooking mode
+  useEffect(() => {
+    if (isCookingMode) {
+      ScreenOrientation.unlockAsync();
+    } else {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    }
+    return () => {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+    };
+  }, [isCookingMode]);
 
   // Parallax header animations
   const headerHeight = scrollY.interpolate({
@@ -371,11 +398,122 @@ export default function RecipeDetailScreen() {
     }, 1000);
   };
 
+  // Format time display
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Smart Timer: Parse text and make durations clickable
+  const SmartTimerText = ({ text, stepId }: { text: string; stepId: string }) => {
+    // Regex to find durations like "15 minutes", "5 min", "10 secondes"
+    const durationRegex = /(\d+)\s*(minutes?|min|secondes?|sec|heures?|h)/gi;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match;
+
+    const getMinutes = (value: number, unit: string): number => {
+      const lowerUnit = unit.toLowerCase();
+      if (lowerUnit.startsWith('sec')) return value / 60;
+      if (lowerUnit.startsWith('h') || lowerUnit.startsWith('heure')) return value * 60;
+      return value; // minutes
+    };
+
+    const parsedText = text;
+    const regex = new RegExp(durationRegex.source, 'gi');
+    
+    while ((match = regex.exec(parsedText)) !== null) {
+      // Add text before the match
+      if (match.index > lastIndex) {
+        parts.push(
+          <Text key={`text-${lastIndex}`} style={styles.stepDescription}>
+            {parsedText.slice(lastIndex, match.index)}
+          </Text>
+        );
+      }
+
+      const value = parseInt(match[1]);
+      const unit = match[2];
+      const minutes = getMinutes(value, unit);
+      const timerId = `${stepId}-inline-${match.index}`;
+      const timer = timers.find(t => t.stepId === timerId);
+
+      // Add clickable duration
+      parts.push(
+        <TouchableOpacity
+          key={`timer-${match.index}`}
+          onPress={() => {
+            if (Platform.OS !== 'web') {
+              Vibration.vibrate(30);
+            }
+            startTimer(timerId, minutes);
+          }}
+          style={[
+            smartTimerStyles.timerBadge,
+            timer?.isRunning && smartTimerStyles.timerBadgeActive
+          ]}
+        >
+          <Ionicons 
+            name={timer?.isRunning ? "timer" : "timer-outline"} 
+            size={14} 
+            color={timer?.isRunning ? '#FFF' : colors.primary} 
+          />
+          <Text style={[
+            smartTimerStyles.timerText,
+            timer?.isRunning && smartTimerStyles.timerTextActive
+          ]}>
+            {timer?.isRunning ? formatTime(timer.remaining) : match[0]}
+          </Text>
+        </TouchableOpacity>
+      );
+
+      lastIndex = regex.lastIndex;
+    }
+
+    // Add remaining text
+    if (lastIndex < parsedText.length) {
+      parts.push(
+        <Text key={`text-end`} style={styles.stepDescription}>
+          {parsedText.slice(lastIndex)}
+        </Text>
+      );
+    }
+
+    // If no durations found, return original text
+    if (parts.length === 0) {
+      return <Text style={styles.stepDescription}>{text}</Text>;
+    }
+
+    return <Text style={styles.stepDescription}>{parts}</Text>;
+  };
+
+  // Smart Timer Styles
+  const smartTimerStyles = StyleSheet.create({
+    timerBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: 'rgba(76, 175, 80, 0.15)',
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      gap: 4,
+    },
+    timerBadgeActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
+    },
+    timerText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    timerTextActive: {
+      color: '#FFF',
+    },
+  });
 
   // Voice commands for cooking mode
   const speakStep = (stepIndex: number) => {
@@ -415,79 +553,394 @@ export default function RecipeDetailScreen() {
 
   const nutrition = getScaledNutrition();
 
-  // Cooking Mode Modal
-  const CookingModeModal = () => (
-    <Modal visible={isCookingMode} animationType="fade" presentationStyle="fullScreen">
-      <SafeAreaView style={styles.cookingModeContainer}>
-        <StatusBar barStyle="light-content" />
-        
-        <View style={styles.cookingModeHeader}>
-          <TouchableOpacity onPress={() => setIsCookingMode(false)}>
-            <Ionicons name="close" size={30} color="#FFF" />
-          </TouchableOpacity>
-          <Text style={styles.cookingModeTitle}>Mode Cuisine</Text>
-          <TouchableOpacity onPress={() => handleVoiceCommand('repeat')}>
-            <Ionicons name="volume-high" size={28} color="#FFF" />
-          </TouchableOpacity>
-        </View>
+  // Cooking Mode Modal with Enhanced Voice Commands and Landscape Support
+  const CookingModeModal = () => {
+    const isLandscape = orientation === 'LANDSCAPE';
+    const step = recipe.steps[currentStep];
+    const timer = timers.find(t => t.stepId === step.id);
 
-        <View style={styles.cookingModeProgress}>
-          <Text style={styles.progressText}>Etape {currentStep + 1} / {recipe.steps.length}</Text>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${((currentStep + 1) / recipe.steps.length) * 100}%` }]} />
-          </View>
-        </View>
+    const handleStepChange = (direction: 'next' | 'back') => {
+      // Haptic feedback
+      if (Platform.OS !== 'web') {
+        Vibration.vibrate(50);
+      }
+      
+      if (direction === 'next' && currentStep < recipe.steps.length - 1) {
+        setCurrentStep(prev => prev + 1);
+        speakStep(currentStep + 1);
+      } else if (direction === 'back' && currentStep > 0) {
+        setCurrentStep(prev => prev - 1);
+        speakStep(currentStep - 1);
+      } else if (direction === 'next' && currentStep === recipe.steps.length - 1) {
+        Speech.speak('Felicitations! Vous avez termine la recette.', { language: 'fr-FR' });
+        setIsCookingMode(false);
+      }
+    };
 
-        <View style={styles.cookingModeContent}>
-          <Image source={{ uri: recipe.steps[currentStep].image }} style={styles.cookingModeImage} />
+    const toggleVoiceListening = () => {
+      setVoiceEnabled(!voiceEnabled);
+      if (!voiceEnabled) {
+        Speech.speak('Commandes vocales activees. Dites Suivant, Precedent, ou Repeter.', { language: 'fr-FR', rate: 0.9 });
+      }
+    };
+
+    return (
+      <Modal visible={isCookingMode} animationType="fade" presentationStyle="fullScreen" supportedOrientations={['portrait', 'landscape']}>
+        <View style={[cookingStyles.container, isLandscape && cookingStyles.containerLandscape]}>
+          <StatusBar barStyle="light-content" hidden={isLandscape} />
           
-          <Text style={styles.cookingModeStepTitle}>{recipe.steps[currentStep].title}</Text>
-          <Text style={styles.cookingModeStepDesc}>{recipe.steps[currentStep].description}</Text>
+          {/* Header */}
+          <View style={[cookingStyles.header, isLandscape && cookingStyles.headerLandscape]}>
+            <TouchableOpacity onPress={() => setIsCookingMode(false)} style={cookingStyles.headerBtn}>
+              <Ionicons name="close" size={isLandscape ? 24 : 30} color="#FFF" />
+            </TouchableOpacity>
+            <Text style={[cookingStyles.title, isLandscape && cookingStyles.titleLandscape]}>
+              Mode Cuisine
+            </Text>
+            <View style={cookingStyles.headerRight}>
+              <TouchableOpacity onPress={toggleVoiceListening} style={[cookingStyles.headerBtn, voiceEnabled && cookingStyles.headerBtnActive]}>
+                <Ionicons name={voiceEnabled ? "mic" : "mic-off"} size={isLandscape ? 20 : 24} color="#FFF" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => speakStep(currentStep)} style={cookingStyles.headerBtn}>
+                <Ionicons name="volume-high" size={isLandscape ? 20 : 24} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+          </View>
 
-          {recipe.steps[currentStep].duration > 0 && (
+          {/* Progress Bar */}
+          <View style={cookingStyles.progressContainer}>
+            <Text style={cookingStyles.progressText}>
+              Etape {currentStep + 1} sur {recipe.steps.length}
+            </Text>
+            <View style={cookingStyles.progressBar}>
+              <View style={[cookingStyles.progressFill, { width: `${((currentStep + 1) / recipe.steps.length) * 100}%` }]} />
+            </View>
+          </View>
+
+          {/* Main Content */}
+          <View style={[cookingStyles.content, isLandscape && cookingStyles.contentLandscape]}>
+            {isLandscape ? (
+              // Landscape Layout - Side by side
+              <>
+                <View style={cookingStyles.landscapeLeft}>
+                  <Image source={{ uri: step.image }} style={cookingStyles.imageLandscape} />
+                </View>
+                <View style={cookingStyles.landscapeRight}>
+                  <Text style={cookingStyles.stepTitleLarge}>{step.title}</Text>
+                  <Text style={cookingStyles.stepDescLarge}>{step.description}</Text>
+                  
+                  {step.tip && (
+                    <View style={cookingStyles.tipContainer}>
+                      <Ionicons name="bulb" size={20} color="#FFD700" />
+                      <Text style={cookingStyles.tipText}>{step.tip}</Text>
+                    </View>
+                  )}
+
+                  {step.duration > 0 && (
+                    <TouchableOpacity 
+                      style={[cookingStyles.timerBtn, timer?.isRunning && cookingStyles.timerBtnActive]}
+                      onPress={() => startTimer(step.id, step.duration)}
+                    >
+                      <Ionicons name="timer" size={28} color="#FFF" />
+                      <Text style={cookingStyles.timerText}>
+                        {timer?.isRunning ? formatTime(timer.remaining) : `Demarrer ${step.duration} min`}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            ) : (
+              // Portrait Layout - Stacked
+              <ScrollView contentContainerStyle={cookingStyles.portraitContent} showsVerticalScrollIndicator={false}>
+                <Image source={{ uri: step.image }} style={cookingStyles.imagePortrait} />
+                
+                <Text style={cookingStyles.stepTitle}>{step.title}</Text>
+                <Text style={cookingStyles.stepDesc}>{step.description}</Text>
+                
+                {step.tip && (
+                  <View style={cookingStyles.tipContainer}>
+                    <Ionicons name="bulb" size={18} color="#FFD700" />
+                    <Text style={cookingStyles.tipText}>{step.tip}</Text>
+                  </View>
+                )}
+
+                {step.duration > 0 && (
+                  <TouchableOpacity 
+                    style={[cookingStyles.timerBtn, timer?.isRunning && cookingStyles.timerBtnActive]}
+                    onPress={() => startTimer(step.id, step.duration)}
+                  >
+                    <Ionicons name="timer" size={24} color="#FFF" />
+                    <Text style={cookingStyles.timerText}>
+                      {timer?.isRunning ? formatTime(timer.remaining) : `Demarrer le minuteur: ${step.duration} min`}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </ScrollView>
+            )}
+          </View>
+
+          {/* Navigation Buttons */}
+          <View style={[cookingStyles.navigation, isLandscape && cookingStyles.navigationLandscape]}>
             <TouchableOpacity 
-              style={styles.cookingModeTimer}
-              onPress={() => startTimer(recipe.steps[currentStep].id, recipe.steps[currentStep].duration)}
+              style={[cookingStyles.navBtn, currentStep === 0 && cookingStyles.navBtnDisabled]}
+              onPress={() => handleStepChange('back')}
+              disabled={currentStep === 0}
             >
-              <Ionicons name="timer" size={24} color="#FFF" />
-              <Text style={styles.timerTextWhite}>
-                {timers.find(t => t.stepId === recipe.steps[currentStep].id)?.isRunning 
-                  ? formatTime(timers.find(t => t.stepId === recipe.steps[currentStep].id)?.remaining || 0)
-                  : `${recipe.steps[currentStep].duration} min`
-                }
+              <Ionicons name="chevron-back" size={32} color={currentStep === 0 ? '#555' : '#FFF'} />
+              <Text style={[cookingStyles.navText, currentStep === 0 && cookingStyles.navTextDisabled]}>
+                Precedent
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[cookingStyles.navBtn, cookingStyles.navBtnPrimary]}
+              onPress={() => handleStepChange('next')}
+            >
+              <Text style={cookingStyles.navTextPrimary}>
+                {currentStep === recipe.steps.length - 1 ? 'Terminer' : 'Suivant'}
+              </Text>
+              <Ionicons name="chevron-forward" size={32} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Voice Hint */}
+          {voiceEnabled && (
+            <View style={cookingStyles.voiceHint}>
+              <View style={cookingStyles.voiceIndicator} />
+              <Text style={cookingStyles.voiceHintText}>
+                Dites "Suivant", "Precedent" ou "Repeter"
+              </Text>
+            </View>
           )}
         </View>
+      </Modal>
+    );
+  };
 
-        <View style={styles.cookingModeNav}>
-          <TouchableOpacity 
-            style={[styles.navButton, currentStep === 0 && styles.navButtonDisabled]}
-            onPress={() => handleVoiceCommand('back')}
-            disabled={currentStep === 0}
-          >
-            <Ionicons name="arrow-back" size={28} color={currentStep === 0 ? '#666' : '#FFF'} />
-            <Text style={[styles.navButtonText, currentStep === 0 && { color: '#666' }]}>Precedent</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.navButton, styles.navButtonPrimary]}
-            onPress={() => currentStep === recipe.steps.length - 1 ? setIsCookingMode(false) : handleVoiceCommand('next')}
-          >
-            <Text style={styles.navButtonTextPrimary}>
-              {currentStep === recipe.steps.length - 1 ? 'Terminer' : 'Suivant'}
-            </Text>
-            <Ionicons name="arrow-forward" size={28} color="#FFF" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.voiceHint}>
-          <Ionicons name="mic" size={16} color="#888" />
-          <Text style={styles.voiceHintText}>Dites "Suivant", "Precedent" ou "Repeter"</Text>
-        </View>
-      </SafeAreaView>
-    </Modal>
-  );
+  // Cooking Mode Styles
+  const cookingStyles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: '#1a1a1a',
+    },
+    containerLandscape: {
+      flexDirection: 'column',
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: Platform.OS === 'ios' ? 50 : 20,
+      paddingBottom: 12,
+      backgroundColor: '#000',
+    },
+    headerLandscape: {
+      paddingTop: 10,
+      paddingBottom: 8,
+    },
+    headerBtn: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: 'rgba(255,255,255,0.15)',
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    headerBtnActive: {
+      backgroundColor: colors.primary,
+    },
+    headerRight: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    title: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: '#FFF',
+    },
+    titleLandscape: {
+      fontSize: 16,
+    },
+    progressContainer: {
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      backgroundColor: '#000',
+    },
+    progressText: {
+      fontSize: 14,
+      color: '#888',
+      marginBottom: 8,
+    },
+    progressBar: {
+      height: 4,
+      backgroundColor: '#333',
+      borderRadius: 2,
+    },
+    progressFill: {
+      height: '100%',
+      backgroundColor: colors.primary,
+      borderRadius: 2,
+    },
+    content: {
+      flex: 1,
+      padding: 20,
+    },
+    contentLandscape: {
+      flexDirection: 'row',
+      padding: 16,
+    },
+    landscapeLeft: {
+      flex: 1,
+      marginRight: 16,
+    },
+    landscapeRight: {
+      flex: 1.5,
+      justifyContent: 'center',
+    },
+    imageLandscape: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 16,
+      resizeMode: 'cover',
+    },
+    portraitContent: {
+      alignItems: 'center',
+      paddingBottom: 20,
+    },
+    imagePortrait: {
+      width: SCREEN_WIDTH - 40,
+      height: 220,
+      borderRadius: 20,
+      resizeMode: 'cover',
+      marginBottom: 24,
+    },
+    stepTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: '#FFF',
+      textAlign: 'center',
+      marginBottom: 12,
+    },
+    stepTitleLarge: {
+      fontSize: 28,
+      fontWeight: '700',
+      color: '#FFF',
+      marginBottom: 16,
+    },
+    stepDesc: {
+      fontSize: 18,
+      color: '#CCC',
+      textAlign: 'center',
+      lineHeight: 28,
+      paddingHorizontal: 20,
+    },
+    stepDescLarge: {
+      fontSize: 20,
+      color: '#CCC',
+      lineHeight: 32,
+    },
+    tipContainer: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      backgroundColor: 'rgba(255,215,0,0.15)',
+      padding: 14,
+      borderRadius: 12,
+      marginTop: 20,
+      gap: 10,
+    },
+    tipText: {
+      flex: 1,
+      fontSize: 14,
+      color: '#FFD700',
+      lineHeight: 20,
+    },
+    timerBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#333',
+      paddingVertical: 16,
+      paddingHorizontal: 24,
+      borderRadius: 16,
+      marginTop: 24,
+      gap: 12,
+    },
+    timerBtnActive: {
+      backgroundColor: colors.primary,
+    },
+    timerText: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: '#FFF',
+    },
+    navigation: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingVertical: 16,
+      paddingBottom: Platform.OS === 'ios' ? 34 : 16,
+      backgroundColor: '#000',
+      gap: 16,
+    },
+    navigationLandscape: {
+      paddingVertical: 10,
+      paddingBottom: 10,
+    },
+    navBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 16,
+      borderRadius: 16,
+      backgroundColor: '#333',
+      gap: 8,
+    },
+    navBtnDisabled: {
+      backgroundColor: '#222',
+    },
+    navBtnPrimary: {
+      backgroundColor: colors.primary,
+    },
+    navText: {
+      fontSize: 18,
+      fontWeight: '600',
+      color: '#FFF',
+    },
+    navTextDisabled: {
+      color: '#555',
+    },
+    navTextPrimary: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: '#FFF',
+    },
+    voiceHint: {
+      position: 'absolute',
+      bottom: Platform.OS === 'ios' ? 100 : 80,
+      left: 20,
+      right: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: 'rgba(76, 175, 80, 0.2)',
+      paddingVertical: 10,
+      borderRadius: 20,
+      gap: 8,
+    },
+    voiceIndicator: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: colors.primary,
+    },
+    voiceHintText: {
+      fontSize: 14,
+      color: colors.primary,
+      fontWeight: '500',
+    },
+  });
 
   // Floating Nutrition Bubble
   const NutritionBubble = () => (
@@ -683,7 +1136,8 @@ export default function RecipeDetailScreen() {
                   )}
                 </View>
                 
-                <Text style={styles.stepDescription}>{step.description}</Text>
+                {/* Smart Timer Text - clickable durations */}
+                <SmartTimerText text={step.description} stepId={step.id} />
                 
                 {step.tip && (
                   <View style={styles.stepTip}>
