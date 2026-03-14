@@ -2606,6 +2606,345 @@ async def delete_user_profile(request: Request):
     return {"success": True, "message": "Profil et historique supprimés"}
 
 
+# ============== PREMIUM RECIPES API ==============
+
+class RecipeIngredient(BaseModel):
+    id: str
+    name: str
+    quantity: float
+    unit: str
+    category: str
+
+class RecipeStep(BaseModel):
+    id: str
+    title: str
+    description: str
+    duration: int  # in minutes
+    image: str
+    tip: Optional[str] = None
+    videoUrl: Optional[str] = None
+
+class Recipe(BaseModel):
+    id: str
+    title: str
+    subtitle: str
+    heroImage: str
+    videoUrl: str
+    prepTime: int  # in minutes
+    totalTime: int
+    servings: int
+    difficulty: str
+    healthScore: int
+    calories: int
+    protein: int
+    carbs: int
+    tags: List[str]
+    ingredients: List[RecipeIngredient]
+    steps: List[RecipeStep]
+    author: str
+    rating: float
+    reviews: int
+
+# Mock recipes data (in production, this would come from the database)
+PREMIUM_RECIPES = [
+    {
+        "id": "buddha-bowl-med",
+        "title": "Buddha Bowl Mediterraneen",
+        "subtitle": "Bowl equilibre aux saveurs du sud",
+        "heroImage": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800",
+        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "prepTime": 15,
+        "totalTime": 35,
+        "servings": 2,
+        "difficulty": "Facile",
+        "healthScore": 92,
+        "calories": 485,
+        "protein": 18,
+        "carbs": 52,
+        "tags": ["Vegetarien", "Proteines", "Sans gluten", "Mediterraneen"],
+        "ingredients": [
+            {"id": "1", "name": "Quinoa", "quantity": 150, "unit": "g", "category": "Cereales"},
+            {"id": "2", "name": "Pois chiches", "quantity": 200, "unit": "g", "category": "Legumineuses"},
+            {"id": "3", "name": "Avocat", "quantity": 1, "unit": "piece", "category": "Fruits"},
+            {"id": "4", "name": "Tomates cerises", "quantity": 150, "unit": "g", "category": "Legumes"},
+            {"id": "5", "name": "Concombre", "quantity": 1, "unit": "piece", "category": "Legumes"},
+            {"id": "6", "name": "Feta", "quantity": 80, "unit": "g", "category": "Produits laitiers"},
+            {"id": "7", "name": "Huile d'olive", "quantity": 2, "unit": "c.a.s", "category": "Matieres grasses"},
+            {"id": "8", "name": "Citron", "quantity": 1, "unit": "piece", "category": "Fruits"},
+        ],
+        "steps": [
+            {
+                "id": "step1",
+                "title": "Preparer le quinoa",
+                "description": "Rincez le quinoa sous l'eau froide. Faites cuire dans 2 volumes d'eau salee pendant 15 minutes.",
+                "duration": 15,
+                "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400",
+                "tip": "Le quinoa est pret quand les grains sont translucides.",
+                "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+            },
+            {
+                "id": "step2",
+                "title": "Preparer les legumes",
+                "description": "Coupez les tomates cerises en deux. Detaillez le concombre en rondelles. Emincez l'avocat.",
+                "duration": 5,
+                "image": "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400",
+                "tip": "Arrosez l'avocat de citron pour eviter qu'il ne s'oxyde.",
+            },
+            {
+                "id": "step3",
+                "title": "Rôtir les pois chiches",
+                "description": "Egouttez les pois chiches. Faites-les rotir a la poele avec un filet d'huile d'olive pendant 8 minutes.",
+                "duration": 8,
+                "image": "https://images.unsplash.com/photo-1515543237350-b3eea1ec8082?w=400",
+                "tip": "Les pois chiches doivent etre dores et croustillants.",
+            },
+            {
+                "id": "step4",
+                "title": "Assembler le bowl",
+                "description": "Disposez le quinoa au fond du bowl. Ajoutez les legumes, les pois chiches et la feta. Arrosez d'huile d'olive et de jus de citron.",
+                "duration": 3,
+                "image": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400",
+                "tip": "Salez et poivrez selon votre gout.",
+            }
+        ],
+        "author": "Chef NutriScan",
+        "rating": 4.8,
+        "reviews": 234
+    },
+    {
+        "id": "salmon-teriyaki",
+        "title": "Saumon Teriyaki",
+        "subtitle": "Filet de saumon glace aux saveurs japonaises",
+        "heroImage": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800",
+        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+        "prepTime": 10,
+        "totalTime": 25,
+        "servings": 2,
+        "difficulty": "Moyen",
+        "healthScore": 88,
+        "calories": 420,
+        "protein": 35,
+        "carbs": 28,
+        "tags": ["Poisson", "Omega-3", "Japonais", "Rapide"],
+        "ingredients": [
+            {"id": "1", "name": "Filets de saumon", "quantity": 300, "unit": "g", "category": "Poisson"},
+            {"id": "2", "name": "Sauce soja", "quantity": 60, "unit": "ml", "category": "Condiments"},
+            {"id": "3", "name": "Miel", "quantity": 30, "unit": "ml", "category": "Sucres"},
+            {"id": "4", "name": "Riz basmati", "quantity": 200, "unit": "g", "category": "Cereales"},
+            {"id": "5", "name": "Brocoli", "quantity": 200, "unit": "g", "category": "Legumes"},
+            {"id": "6", "name": "Graines de sesame", "quantity": 10, "unit": "g", "category": "Graines"},
+        ],
+        "steps": [
+            {
+                "id": "step1",
+                "title": "Preparer la sauce teriyaki",
+                "description": "Melangez la sauce soja et le miel dans un bol. Reservez la moitie pour le glacage.",
+                "duration": 2,
+                "image": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400",
+            },
+            {
+                "id": "step2",
+                "title": "Cuire le riz",
+                "description": "Rincez le riz et faites-le cuire selon les instructions du paquet pendant 12 minutes.",
+                "duration": 12,
+                "image": "https://images.unsplash.com/photo-1516684732162-798a0062be99?w=400",
+            },
+            {
+                "id": "step3",
+                "title": "Cuire le saumon",
+                "description": "Faites chauffer une poele. Saisissez les filets de saumon 4 minutes de chaque cote en les badigeonnant de sauce.",
+                "duration": 8,
+                "image": "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=400",
+                "tip": "Ne retournez le saumon qu'une seule fois pour une belle croute.",
+            },
+            {
+                "id": "step4",
+                "title": "Servir",
+                "description": "Disposez le riz et le brocoli dans les assiettes. Ajoutez le saumon, nappez de sauce et parsemez de sesame.",
+                "duration": 3,
+                "image": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=400",
+            }
+        ],
+        "author": "Chef NutriScan",
+        "rating": 4.9,
+        "reviews": 312
+    },
+    {
+        "id": "smoothie-bowl",
+        "title": "Smoothie Bowl Tropical",
+        "subtitle": "Petit-dejeuner vitamine et colore",
+        "heroImage": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=800",
+        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+        "prepTime": 10,
+        "totalTime": 10,
+        "servings": 1,
+        "difficulty": "Facile",
+        "healthScore": 95,
+        "calories": 320,
+        "protein": 8,
+        "carbs": 58,
+        "tags": ["Petit-dejeuner", "Vegan", "Sans gluten", "Fruits"],
+        "ingredients": [
+            {"id": "1", "name": "Banane congelee", "quantity": 1, "unit": "piece", "category": "Fruits"},
+            {"id": "2", "name": "Mangue", "quantity": 100, "unit": "g", "category": "Fruits"},
+            {"id": "3", "name": "Lait de coco", "quantity": 150, "unit": "ml", "category": "Boissons"},
+            {"id": "4", "name": "Granola", "quantity": 30, "unit": "g", "category": "Cereales"},
+            {"id": "5", "name": "Fruits rouges", "quantity": 50, "unit": "g", "category": "Fruits"},
+            {"id": "6", "name": "Noix de coco rapee", "quantity": 10, "unit": "g", "category": "Noix"},
+        ],
+        "steps": [
+            {
+                "id": "step1",
+                "title": "Mixer les fruits",
+                "description": "Placez la banane congelee, la mangue et le lait de coco dans un blender. Mixez pendant 2 minutes jusqu'a obtenir une texture epaisse.",
+                "duration": 2,
+                "image": "https://images.unsplash.com/photo-1638176066666-ffb2f013c7dd?w=400",
+                "tip": "Ajoutez moins de lait pour une texture plus epaisse.",
+            },
+            {
+                "id": "step2",
+                "title": "Dresser le bowl",
+                "description": "Versez le smoothie dans un bol. Ajoutez le granola, les fruits rouges et la noix de coco rapee en decoration.",
+                "duration": 3,
+                "image": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=400",
+            }
+        ],
+        "author": "Chef NutriScan",
+        "rating": 4.7,
+        "reviews": 189
+    }
+]
+
+
+@api_router.get("/recipes")
+async def get_all_recipes(request: Request, category: str = None):
+    """Get all premium recipes - Premium feature"""
+    user = await get_firebase_premium_user(request)
+    
+    # Allow non-premium users to see recipe list (but not details)
+    recipes = PREMIUM_RECIPES
+    
+    if category:
+        recipes = [r for r in recipes if category.lower() in [t.lower() for t in r['tags']]]
+    
+    # Return simplified list for non-premium users
+    if not user or user.subscription_type != "premium":
+        return {
+            "recipes": [
+                {
+                    "id": r["id"],
+                    "title": r["title"],
+                    "subtitle": r["subtitle"],
+                    "heroImage": r["heroImage"],
+                    "totalTime": r["totalTime"],
+                    "difficulty": r["difficulty"],
+                    "healthScore": r["healthScore"],
+                    "rating": r["rating"],
+                    "tags": r["tags"][:2],
+                    "isPremiumLocked": True
+                }
+                for r in recipes
+            ],
+            "isPremium": False
+        }
+    
+    return {
+        "recipes": [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "subtitle": r["subtitle"],
+                "heroImage": r["heroImage"],
+                "totalTime": r["totalTime"],
+                "difficulty": r["difficulty"],
+                "healthScore": r["healthScore"],
+                "calories": r["calories"],
+                "protein": r["protein"],
+                "rating": r["rating"],
+                "reviews": r["reviews"],
+                "tags": r["tags"],
+                "isPremiumLocked": False
+            }
+            for r in recipes
+        ],
+        "isPremium": True
+    }
+
+
+@api_router.get("/recipes/{recipe_id}")
+async def get_recipe_detail(recipe_id: str, request: Request):
+    """Get full recipe details - Premium only"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user or user.subscription_type != "premium":
+        raise HTTPException(status_code=403, detail="Fonctionnalite Premium requise")
+    
+    recipe = next((r for r in PREMIUM_RECIPES if r["id"] == recipe_id), None)
+    
+    if not recipe:
+        raise HTTPException(status_code=404, detail="Recette non trouvee")
+    
+    return recipe
+
+
+@api_router.post("/recipes/{recipe_id}/favorite")
+async def toggle_recipe_favorite(recipe_id: str, request: Request):
+    """Add or remove recipe from favorites"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    # Check if already favorite
+    existing = await db.recipe_favorites.find_one({
+        "user_id": user.email,
+        "recipe_id": recipe_id
+    })
+    
+    if existing:
+        await db.recipe_favorites.delete_one({"_id": existing["_id"]})
+        return {"success": True, "isFavorite": False, "message": "Recette retiree des favoris"}
+    else:
+        await db.recipe_favorites.insert_one({
+            "user_id": user.email,
+            "recipe_id": recipe_id,
+            "created_at": datetime.now(timezone.utc)
+        })
+        return {"success": True, "isFavorite": True, "message": "Recette ajoutee aux favoris"}
+
+
+@api_router.get("/recipes/favorites/list")
+async def get_favorite_recipes(request: Request):
+    """Get user's favorite recipes"""
+    user = await get_firebase_premium_user(request)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Connexion requise")
+    
+    favorites = await db.recipe_favorites.find(
+        {"user_id": user.email}
+    ).to_list(100)
+    
+    favorite_ids = [f["recipe_id"] for f in favorites]
+    recipes = [r for r in PREMIUM_RECIPES if r["id"] in favorite_ids]
+    
+    return {
+        "favorites": [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "subtitle": r["subtitle"],
+                "heroImage": r["heroImage"],
+                "totalTime": r["totalTime"],
+                "difficulty": r["difficulty"],
+                "healthScore": r["healthScore"],
+                "rating": r["rating"],
+            }
+            for r in recipes
+        ]
+    }
+
+
 # Include router and middleware
 app.include_router(api_router)
 

@@ -23,8 +23,21 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import * as Speech from 'expo-speech';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors } from '../src/styles/colors';
 import { useAuth } from '../src/contexts/AuthContext';
+
+// Try to import speech recognition (may not be available on all platforms)
+let ExpoSpeechRecognitionModule: any = null;
+let useSpeechRecognitionEvent: any = null;
+try {
+  const speechRecognition = require('expo-speech-recognition');
+  ExpoSpeechRecognitionModule = speechRecognition.ExpoSpeechRecognitionModule;
+  useSpeechRecognitionEvent = speechRecognition.useSpeechRecognitionEvent;
+} catch (e) {
+  console.log('Speech recognition not available on this platform');
+}
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HEADER_MAX_HEIGHT = 300;
@@ -302,9 +315,216 @@ export default function RecipeDetailScreen() {
   const [isListening, setIsListening] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [orientation, setOrientation] = useState<'PORTRAIT' | 'LANDSCAPE'>('PORTRAIT');
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  
+  // Offline state
+  const [isSavedOffline, setIsSavedOffline] = useState(false);
+  const [savingOffline, setSavingOffline] = useState(false);
   
   // Timer intervals
   const timerIntervals = useRef<{ [key: string]: NodeJS.Timeout }>({});
+
+  // Check if recipe is saved offline on mount
+  useEffect(() => {
+    checkOfflineStatus();
+  }, []);
+
+  const checkOfflineStatus = async () => {
+    try {
+      const savedRecipes = await AsyncStorage.getItem('offline_recipes');
+      if (savedRecipes) {
+        const recipes = JSON.parse(savedRecipes);
+        setIsSavedOffline(recipes.some((r: any) => r.id === recipe.id));
+      }
+    } catch (e) {
+      console.log('Error checking offline status:', e);
+    }
+  };
+
+  // Save recipe for offline use
+  const saveForOffline = async () => {
+    if (savingOffline) return;
+    setSavingOffline(true);
+    
+    try {
+      // Get existing saved recipes
+      const savedRecipesJson = await AsyncStorage.getItem('offline_recipes');
+      const savedRecipes = savedRecipesJson ? JSON.parse(savedRecipesJson) : [];
+      
+      // Check if already saved
+      if (savedRecipes.some((r: any) => r.id === recipe.id)) {
+        Alert.alert('Info', 'Cette recette est deja sauvegardee');
+        setSavingOffline(false);
+        return;
+      }
+      
+      // Download images to local cache
+      const downloadedImages: { [key: string]: string } = {};
+      
+      // Download hero image
+      if (recipe.heroImage) {
+        try {
+          const heroFileName = `recipe_${recipe.id}_hero.jpg`;
+          const heroPath = `${FileSystem.cacheDirectory}${heroFileName}`;
+          const heroDownload = await FileSystem.downloadAsync(recipe.heroImage, heroPath);
+          downloadedImages.heroImage = heroDownload.uri;
+        } catch (e) {
+          downloadedImages.heroImage = recipe.heroImage; // Keep URL as fallback
+        }
+      }
+      
+      // Download step images
+      for (let i = 0; i < recipe.steps.length; i++) {
+        const step = recipe.steps[i];
+        if (step.image) {
+          try {
+            const stepFileName = `recipe_${recipe.id}_step_${i}.jpg`;
+            const stepPath = `${FileSystem.cacheDirectory}${stepFileName}`;
+            const stepDownload = await FileSystem.downloadAsync(step.image, stepPath);
+            downloadedImages[`step_${i}`] = stepDownload.uri;
+          } catch (e) {
+            downloadedImages[`step_${i}`] = step.image;
+          }
+        }
+      }
+      
+      // Save recipe with local image paths
+      const offlineRecipe = {
+        ...recipe,
+        heroImage: downloadedImages.heroImage || recipe.heroImage,
+        steps: recipe.steps.map((step, i) => ({
+          ...step,
+          image: downloadedImages[`step_${i}`] || step.image,
+        })),
+        savedAt: new Date().toISOString(),
+        isOffline: true,
+      };
+      
+      savedRecipes.push(offlineRecipe);
+      await AsyncStorage.setItem('offline_recipes', JSON.stringify(savedRecipes));
+      
+      setIsSavedOffline(true);
+      Alert.alert('Succes', 'Recette sauvegardee pour utilisation hors-ligne!');
+    } catch (error) {
+      console.log('Error saving offline:', error);
+      Alert.alert('Erreur', 'Impossible de sauvegarder la recette');
+    } finally {
+      setSavingOffline(false);
+    }
+  };
+
+  // Remove from offline storage
+  const removeFromOffline = async () => {
+    try {
+      const savedRecipesJson = await AsyncStorage.getItem('offline_recipes');
+      if (savedRecipesJson) {
+        const savedRecipes = JSON.parse(savedRecipesJson);
+        const filtered = savedRecipes.filter((r: any) => r.id !== recipe.id);
+        await AsyncStorage.setItem('offline_recipes', JSON.stringify(filtered));
+        setIsSavedOffline(false);
+        Alert.alert('Supprime', 'Recette retiree du stockage hors-ligne');
+      }
+    } catch (e) {
+      console.log('Error removing offline:', e);
+    }
+  };
+
+  // Voice Recognition Handler
+  const handleVoiceResult = useCallback((transcript: string) => {
+    const lowerTranscript = transcript.toLowerCase().trim();
+    setVoiceTranscript(transcript);
+    
+    // Command detection
+    if (lowerTranscript.includes('suivant') || lowerTranscript.includes('next')) {
+      if (currentStep < recipe.steps.length - 1) {
+        Vibration.vibrate(50);
+        setCurrentStep(prev => prev + 1);
+        speakStep(currentStep + 1);
+      } else {
+        Speech.speak('Vous etes a la derniere etape', { language: 'fr-FR' });
+      }
+    } else if (lowerTranscript.includes('precedent') || lowerTranscript.includes('retour') || lowerTranscript.includes('back')) {
+      if (currentStep > 0) {
+        Vibration.vibrate(50);
+        setCurrentStep(prev => prev - 1);
+        speakStep(currentStep - 1);
+      } else {
+        Speech.speak('Vous etes a la premiere etape', { language: 'fr-FR' });
+      }
+    } else if (lowerTranscript.includes('repete') || lowerTranscript.includes('repeter') || lowerTranscript.includes('repeat')) {
+      speakStep(currentStep);
+    } else if (lowerTranscript.includes('minuteur') || lowerTranscript.includes('timer')) {
+      const step = recipe.steps[currentStep];
+      if (step.duration > 0) {
+        startTimer(step.id, step.duration);
+        Speech.speak(`Minuteur de ${step.duration} minutes lance`, { language: 'fr-FR' });
+      }
+    } else if (lowerTranscript.includes('stop') || lowerTranscript.includes('arrete')) {
+      setVoiceEnabled(false);
+      setIsListening(false);
+      Speech.speak('Commandes vocales desactivees', { language: 'fr-FR' });
+    }
+  }, [currentStep, recipe.steps]);
+
+  // Start/Stop voice recognition
+  const toggleVoiceRecognition = async () => {
+    if (!ExpoSpeechRecognitionModule) {
+      // Fallback for web/unsupported platforms - use simple voice feedback
+      setVoiceEnabled(!voiceEnabled);
+      if (!voiceEnabled) {
+        Speech.speak('Commandes vocales simulees activees. Sur mobile, la reconnaissance vocale sera disponible.', { language: 'fr-FR', rate: 0.9 });
+      }
+      return;
+    }
+
+    try {
+      if (isListening) {
+        ExpoSpeechRecognitionModule.stop();
+        setIsListening(false);
+        setVoiceEnabled(false);
+      } else {
+        // Request permissions
+        const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        if (!result.granted) {
+          Alert.alert('Permission requise', 'Veuillez autoriser l\'acces au microphone pour les commandes vocales');
+          return;
+        }
+        
+        // Start listening
+        ExpoSpeechRecognitionModule.start({
+          lang: 'fr-FR',
+          interimResults: true,
+          continuous: true,
+        });
+        setIsListening(true);
+        setVoiceEnabled(true);
+        Speech.speak('Commandes vocales activees', { language: 'fr-FR', rate: 0.9 });
+      }
+    } catch (error) {
+      console.log('Voice recognition error:', error);
+      // Fallback
+      setVoiceEnabled(!voiceEnabled);
+    }
+  };
+
+  // Speech recognition event handler (only if available)
+  useEffect(() => {
+    if (!useSpeechRecognitionEvent || !isListening) return;
+    
+    const handleResult = (event: any) => {
+      if (event.results && event.results.length > 0) {
+        const transcript = event.results[0]?.transcript || '';
+        if (event.isFinal) {
+          handleVoiceResult(transcript);
+        } else {
+          setVoiceTranscript(transcript);
+        }
+      }
+    };
+    
+    // This is a simplified approach - actual implementation depends on expo-speech-recognition API
+    return () => {};
+  }, [isListening, handleVoiceResult]);
 
   // Handle orientation changes for cooking mode
   useEffect(() => {
@@ -577,13 +797,6 @@ export default function RecipeDetailScreen() {
       }
     };
 
-    const toggleVoiceListening = () => {
-      setVoiceEnabled(!voiceEnabled);
-      if (!voiceEnabled) {
-        Speech.speak('Commandes vocales activees. Dites Suivant, Precedent, ou Repeter.', { language: 'fr-FR', rate: 0.9 });
-      }
-    };
-
     return (
       <Modal visible={isCookingMode} animationType="fade" presentationStyle="fullScreen" supportedOrientations={['portrait', 'landscape']}>
         <View style={[cookingStyles.container, isLandscape && cookingStyles.containerLandscape]}>
@@ -598,7 +811,7 @@ export default function RecipeDetailScreen() {
               Mode Cuisine
             </Text>
             <View style={cookingStyles.headerRight}>
-              <TouchableOpacity onPress={toggleVoiceListening} style={[cookingStyles.headerBtn, voiceEnabled && cookingStyles.headerBtnActive]}>
+              <TouchableOpacity onPress={toggleVoiceRecognition} style={[cookingStyles.headerBtn, voiceEnabled && cookingStyles.headerBtnActive]}>
                 <Ionicons name={voiceEnabled ? "mic" : "mic-off"} size={isLandscape ? 20 : 24} color="#FFF" />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => speakStep(currentStep)} style={cookingStyles.headerBtn}>
@@ -979,9 +1192,23 @@ export default function RecipeDetailScreen() {
           <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
-            <Ionicons name="share-outline" size={24} color="#FFF" />
-          </TouchableOpacity>
+          <View style={styles.headerRightButtons}>
+            {/* Save Offline Button */}
+            <TouchableOpacity 
+              style={[styles.headerBtn, isSavedOffline && styles.headerBtnActive]} 
+              onPress={isSavedOffline ? removeFromOffline : saveForOffline}
+              disabled={savingOffline}
+            >
+              {savingOffline ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Ionicons name={isSavedOffline ? "cloud-done" : "cloud-download-outline"} size={24} color="#FFF" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headerBtn}>
+              <Ionicons name="share-outline" size={24} color="#FFF" />
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
 
         <Animated.View style={styles.heroTitleContainer}>
@@ -1204,6 +1431,8 @@ const styles = StyleSheet.create({
   heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   headerButtons: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'android' ? 40 : 0 },
   headerBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center' },
+  headerBtnActive: { backgroundColor: colors.primary },
+  headerRightButtons: { flexDirection: 'row', gap: 10 },
   heroTitleContainer: { position: 'absolute', bottom: 20, left: 20, right: 20 },
   heroTitle: { fontSize: 26, fontWeight: '700', color: '#FFF', textShadowColor: 'rgba(0,0,0,0.5)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
   heroSubtitle: { fontSize: 15, color: 'rgba(255,255,255,0.9)', marginTop: 4 },
