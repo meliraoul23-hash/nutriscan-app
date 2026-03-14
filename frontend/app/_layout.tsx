@@ -34,7 +34,7 @@ function AppContent() {
         <Stack.Screen name="recipe" options={{ headerShown: false }} />
         <Stack.Screen name="recipes" options={{ headerShown: false }} />
       </Stack>
-      {shouldShowUpsell && <PremiumUpsellModal />}
+      {shouldShowUpsell ? <PremiumUpsellModal /> : null}
     </>
   );
 }
