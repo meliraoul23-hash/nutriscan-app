@@ -15,6 +15,10 @@ import {
   getIdToken,
 } from '../firebase';
 
+// Storage keys
+const AUTH_USER_KEY = 'auth_user';
+const TEST_PREMIUM_KEY = 'test_premium_mode';
+
 interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -49,7 +53,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.log('[Auth] Premium status from server:', premiumStatus);
         const updatedUser = { ...user, subscription_type: premiumStatus };
         setUser(updatedUser);
-        await AsyncStorage.setItem('auth_user', JSON.stringify(updatedUser));
+        await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(updatedUser));
       } catch (error) {
         console.log('[Auth] Error refreshing premium:', error);
       }
@@ -57,11 +61,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // Toggle test premium mode (for secret button)
-  const toggleTestPremiumMode = () => {
-    setTestPremiumMode(prev => {
-      console.log('[Auth] Test Premium Mode:', !prev ? 'ACTIVATED' : 'DEACTIVATED');
-      return !prev;
-    });
+  const toggleTestPremiumMode = async () => {
+    const newValue = !testPremiumMode;
+    setTestPremiumMode(newValue);
+    console.log('[Auth] Test Premium Mode:', newValue ? 'ACTIVATED' : 'DEACTIVATED');
+    // Persist test mode state
+    await AsyncStorage.setItem(TEST_PREMIUM_KEY, JSON.stringify(newValue));
   };
 
   // Refresh premium status when app comes to foreground
@@ -76,6 +81,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => subscription?.remove();
   }, [user]);
 
+  // Load auth state and test mode on mount
+  useEffect(() => {
+    const loadInitialState = async () => {
+      // Load test premium mode
+      try {
+        const savedTestMode = await AsyncStorage.getItem(TEST_PREMIUM_KEY);
+        if (savedTestMode) {
+          setTestPremiumMode(JSON.parse(savedTestMode));
+        }
+      } catch (e) {
+        console.log('[Auth] Error loading test mode:', e);
+      }
+    };
+    loadInitialState();
+  }, []);
+
   // Load auth state on mount
   useEffect(() => {
     const unsubscribe = onAuthStateChange(async (firebaseUser) => {
@@ -86,18 +107,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         console.log('[Auth] Initial premium status:', premiumStatus);
         appUser.subscription_type = premiumStatus;
         setUser(appUser);
-        await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
+        await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(appUser));
       } else {
         // Check local storage as fallback
-        const savedUser = await AsyncStorage.getItem('auth_user');
+        const savedUser = await AsyncStorage.getItem(AUTH_USER_KEY);
         if (savedUser) {
           const parsedUser = JSON.parse(savedUser);
           console.log('[Auth] Loading saved user:', parsedUser.email);
-          const premiumStatus = await checkPremiumStatusAPI(parsedUser.email);
-          console.log('[Auth] Premium status from server:', premiumStatus);
-          parsedUser.subscription_type = premiumStatus;
-          setUser(parsedUser);
-          await AsyncStorage.setItem('auth_user', JSON.stringify(parsedUser));
+          try {
+            const premiumStatus = await checkPremiumStatusAPI(parsedUser.email);
+            console.log('[Auth] Premium status from server:', premiumStatus);
+            parsedUser.subscription_type = premiumStatus;
+            setUser(parsedUser);
+            await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(parsedUser));
+          } catch (error) {
+            // If API fails, use saved status but still set the user
+            console.log('[Auth] Could not refresh premium status, using cached value');
+            setUser(parsedUser);
+          }
         }
       }
       setLoading(false);
@@ -167,8 +194,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } catch (error) {
       console.log('Logout error:', error);
     }
-    await AsyncStorage.removeItem('auth_user');
+    await AsyncStorage.removeItem(AUTH_USER_KEY);
+    await AsyncStorage.removeItem(TEST_PREMIUM_KEY);
     setUser(null);
+    setTestPremiumMode(false);
   };
 
   const resetPassword = async (email: string) => {

@@ -19,6 +19,15 @@ import stripe
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+# ============== PRODUCT CACHE ==============
+# Cache pour éviter les appels répétés à Open Food Facts
+from functools import lru_cache
+from cachetools import TTLCache
+import asyncio
+
+# TTL Cache: 300 secondes (5 minutes), max 500 produits
+PRODUCT_CACHE = TTLCache(maxsize=500, ttl=300)
+
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -537,13 +546,20 @@ async def root():
 
 @api_router.get("/product/{barcode}", response_model=ProductResponse)
 async def get_product(barcode: str):
+    # Check cache first
+    if barcode in PRODUCT_CACHE:
+        logger.info(f"Cache hit for product {barcode}")
+        return PRODUCT_CACHE[barcode]
+    
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        # Increased timeout to 25s for better reliability
+        async with httpx.AsyncClient(timeout=25.0) as client:
             response = await client.get(f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json")
             data = response.json()
             
             if data.get('status') != 1:
-                return ProductResponse(barcode=barcode, name="Produit non trouvé", brand="", image_url="", health_score=0, nutri_score="", nutri_score_grade="", nova_group=0, additives=[], nutrients={}, categories=[], pro_tip="Scannez un autre produit.", found=False)
+                result = ProductResponse(barcode=barcode, name="Produit non trouve", brand="", image_url="", health_score=0, nutri_score="", nutri_score_grade="", nova_group=0, additives=[], nutrients={}, categories=[], pro_tip="Scannez un autre produit.", found=False)
+                return result
             
             product = data.get('product', {})
             health_score = calculate_health_score(product)
@@ -556,7 +572,7 @@ async def get_product(barcode: str):
             health_risks = analyze_health_risks(product, additives, nutrients)
             is_vegan, is_vegetarian, is_palm_oil_free = check_dietary_info(product)
             
-            return ProductResponse(
+            result = ProductResponse(
                 barcode=barcode, name=product.get('product_name', 'Produit inconnu'),
                 brand=product.get('brands', 'Marque inconnue'), image_url=product.get('image_url', ''),
                 health_score=health_score, nutri_score=product.get('nutriscore_grade', '').upper(),
@@ -566,6 +582,12 @@ async def get_product(barcode: str):
                 ingredients_list=ingredients_list, allergens=allergens, health_risks=health_risks,
                 is_vegan=is_vegan, is_vegetarian=is_vegetarian, is_palm_oil_free=is_palm_oil_free
             )
+            
+            # Store in cache
+            PRODUCT_CACHE[barcode] = result
+            logger.info(f"Cached product {barcode}")
+            
+            return result
     except Exception as e:
         logger.error(f"Error fetching product {barcode}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1068,18 +1090,18 @@ RANKINGS_CACHE = {}
 RANKINGS_CACHE_TIME = None
 RANKINGS_CACHE_DURATION = 300  # 5 minutes
 
-# Pre-defined healthy products for fast loading
+# Pre-defined healthy products for fast loading with real product images
 HEALTHY_PRODUCTS_FALLBACK = [
-    {"barcode": "3017620422003", "name": "Nutella", "brand": "Ferrero", "health_score": 34, "nutri_score": "E", "category": "all"},
-    {"barcode": "3175681851849", "name": "Compotes pomme", "brand": "Andros", "health_score": 85, "nutri_score": "A", "category": "all"},
-    {"barcode": "3029330003533", "name": "Yaourt nature", "brand": "Danone", "health_score": 82, "nutri_score": "A", "category": "all"},
-    {"barcode": "3033710073436", "name": "Eau minérale", "brand": "Evian", "health_score": 95, "nutri_score": "A", "category": "all"},
-    {"barcode": "3560071097462", "name": "Salade verte", "brand": "Carrefour Bio", "health_score": 90, "nutri_score": "A", "category": "all"},
-    {"barcode": "3250390000684", "name": "Pain complet", "brand": "Harry's", "health_score": 78, "nutri_score": "A", "category": "all"},
-    {"barcode": "3560070824908", "name": "Carottes bio", "brand": "Carrefour Bio", "health_score": 92, "nutri_score": "A", "category": "all"},
-    {"barcode": "3256220040709", "name": "Tomates cerises", "brand": "U Bio", "health_score": 88, "nutri_score": "A", "category": "all"},
-    {"barcode": "3033710074457", "name": "Lait demi-écrémé", "brand": "Lactel", "health_score": 75, "nutri_score": "A", "category": "all"},
-    {"barcode": "3228857000906", "name": "Flocons d'avoine", "brand": "Quaker", "health_score": 80, "nutri_score": "A", "category": "all"},
+    {"barcode": "3017620422003", "name": "Nutella", "brand": "Ferrero", "health_score": 34, "nutri_score": "E", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/301/762/042/2003/front_fr.335.400.jpg"},
+    {"barcode": "3175681851849", "name": "Compotes pomme", "brand": "Andros", "health_score": 85, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/317/568/185/1849/front_fr.125.400.jpg"},
+    {"barcode": "3029330003533", "name": "Yaourt nature", "brand": "Danone", "health_score": 82, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/302/933/000/3533/front_fr.166.400.jpg"},
+    {"barcode": "3033710073436", "name": "Eau minerale", "brand": "Evian", "health_score": 95, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/303/371/007/3436/front_fr.107.400.jpg"},
+    {"barcode": "3560071097462", "name": "Salade verte", "brand": "Carrefour Bio", "health_score": 90, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/356/007/109/7462/front_fr.33.400.jpg"},
+    {"barcode": "3250390000684", "name": "Pain complet", "brand": "Harry's", "health_score": 78, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/325/039/000/0684/front_fr.64.400.jpg"},
+    {"barcode": "3560070824908", "name": "Carottes bio", "brand": "Carrefour Bio", "health_score": 92, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/356/007/082/4908/front_fr.10.400.jpg"},
+    {"barcode": "3256220040709", "name": "Tomates cerises", "brand": "U Bio", "health_score": 88, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/325/622/004/0709/front_fr.10.400.jpg"},
+    {"barcode": "3033710074457", "name": "Lait demi-ecreme", "brand": "Lactel", "health_score": 75, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/303/371/007/4457/front_fr.85.400.jpg"},
+    {"barcode": "3228857000906", "name": "Flocons d'avoine", "brand": "Quaker", "health_score": 80, "nutri_score": "A", "category": "all", "image_url": "https://images.openfoodfacts.org/images/products/322/885/700/0906/front_fr.70.400.jpg"},
 ]
 
 @api_router.get("/rankings/{category}")
@@ -1479,6 +1501,46 @@ async def create_checkout_session(request: CreateCheckoutRequest, user: User = D
     if not user_email:
         raise HTTPException(status_code=401, detail="Email requis pour le paiement")
     
+    # ============== PROTECTION CONTRE LES PAIEMENTS MULTIPLES ==============
+    # Check if user already has premium subscription
+    existing_premium = await db.firebase_users.find_one({"email": user_email})
+    if existing_premium and existing_premium.get("subscription_type") == "premium":
+        # Check if they have an active Stripe subscription
+        stripe_sub_id = existing_premium.get("stripe_subscription_id")
+        if stripe_sub_id:
+            try:
+                subscription = stripe.Subscription.retrieve(stripe_sub_id)
+                if subscription.status in ['active', 'trialing']:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Vous etes deja abonne Premium! Votre abonnement est actif. Gerez votre abonnement depuis votre profil."
+                    )
+            except stripe.error.InvalidRequestError:
+                # Subscription doesn't exist in Stripe anymore, allow new subscription
+                pass
+        else:
+            # User is premium but no Stripe ID - check our database
+            raise HTTPException(
+                status_code=400, 
+                detail="Votre compte est deja Premium! Actualisez votre statut sur l'ecran profil."
+            )
+    
+    # Also check users collection
+    existing_user = await db.users.find_one({"email": user_email})
+    if existing_user and existing_user.get("subscription_type") == "premium":
+        stripe_sub_id = existing_user.get("stripe_subscription_id")
+        if stripe_sub_id:
+            try:
+                subscription = stripe.Subscription.retrieve(stripe_sub_id)
+                if subscription.status in ['active', 'trialing']:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Vous etes deja abonne Premium! Votre abonnement est actif."
+                    )
+            except stripe.error.InvalidRequestError:
+                pass
+    # ============== FIN PROTECTION PAIEMENTS MULTIPLES ==============
+    
     # Define prices - Updated to new pricing (9.99€/month, 69.99€/year)
     prices = {
         'monthly': {
@@ -1507,7 +1569,7 @@ async def create_checkout_session(request: CreateCheckoutRequest, user: User = D
                     'currency': 'eur',
                     'product_data': {
                         'name': plan_info['name'],
-                        'description': 'Accès Premium à NutriScan avec menus IA, objectifs santé, et plus',
+                        'description': 'Acces Premium a NutriScan avec menus IA, objectifs sante, et plus',
                     },
                     'unit_amount': plan_info['amount'],
                     'recurring': {

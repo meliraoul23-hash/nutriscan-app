@@ -495,6 +495,51 @@ backend:
         agent: "testing"
         comment: "✅ PASSED - Voice transcription endpoint working correctly. Successfully transcribes audio files and returns proper JSON response format {success: true/false, text: 'transcribed text', error: 'error message'}. Tested with generated test audio file, received response: success=true, text='Sous-titres réalisés para la communauté d'Amara.org' (51 characters). Proper error handling implemented."
 
+  - task: "POST /api/create-checkout-session - Double payment protection for premium users"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "JUNE 2025 IMPROVEMENT - Added comprehensive double payment protection by checking if user is already premium before creating Stripe checkout session. Blocks duplicate subscriptions with French error message."
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - CRITICAL FEATURE WORKING PERFECTLY: Premium user (meliraoul23@gmail.com) correctly blocked with HTTP 400 and error message 'Votre compte est deja Premium!'. Non-premium user (test@example.com) successfully creates checkout session with HTTP 200 and checkout_url. Protection mechanism fully operational and will prevent duplicate payments."
+
+  - task: "GET /api/product/{barcode} - Product caching and 25s timeout improvement"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "JUNE 2025 IMPROVEMENT - Implemented TTLCache (5 minutes, 500 products) and increased timeout from 15s to 25s for better reliability with Open Food Facts API"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - CACHE AND TIMEOUT VERIFIED: TTLCache working correctly with 5-minute TTL. Tested multiple calls to Nutella product (3017620422003) - second call 50% faster (0.105s vs 0.192s). Additional product (Compotes 3175681851849) also successfully cached. 25-second timeout improvement operational. Backend logs confirm 'Cache hit' messages for subsequent requests."
+
+  - task: "GET /api/rankings/all - Rankings with image URLs for product display"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "JUNE 2025 IMPROVEMENT - Added image_url field to HEALTHY_PRODUCTS_FALLBACK rankings data and ensured all ranking responses include product images"
+      - working: true
+        agent: "testing"
+        comment: "✅ PASSED - IMAGE URLS PRESENT: All 9 products in rankings response contain image_url field with proper Open Food Facts image URLs. Verified with /api/rankings/all endpoint returning complete product data structure with images for proper frontend display."
+
 frontend:
   - task: "Home Screen with scan button and history"
     implemented: true
@@ -549,8 +594,9 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Premium status recognition bug fix"
-    - "Secret test premium button implementation"
+    - "Double payment protection for premium"
+    - "API timeout and cache improvements"
+    - "Premium status persistence"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -582,3 +628,7 @@ agent_communication:
     message: "PREMIUM STATUS FIX - Implemented comprehensive fix for premium status recognition: 1) Added isPremium computed property in AuthContext that checks both real premium status AND test mode 2) Added forceRefreshPremium() to refresh status from server 3) Added toggleTestPremiumMode() for SECRET BUTTON functionality 4) Premium status auto-refreshes when app comes to foreground 5) Updated profile.tsx with TRIPLE TAP on avatar to toggle test premium mode 6) Added refresh button on subscription badge 7) Updated all screens (profile.tsx, history.tsx, preferences.tsx) to use isPremium from context. Backend endpoint /api/check-premium/{email} confirmed working (returns is_premium: true for meliraoul23@gmail.com). Test: Triple tap on profile avatar to activate test premium mode."
   - agent: "testing"
     message: "✅ PREMIUM STATUS RECOGNITION TESTING COMPLETE - REVIEW REQUEST FULFILLED SUCCESSFULLY: 1) GET /api/check-premium/meliraoul23@gmail.com: ✅ HTTP 200, is_premium: true, subscription_type: 'premium' - VERIFIED premium user correctly identified 2) GET /api/check-premium/test@example.com: ✅ HTTP 200, is_premium: false, subscription_type: 'free' - VERIFIED non-premium user correctly identified 3) Response structure validation: ✅ Both responses contain required is_premium (boolean) and subscription_type (string) fields 4) GET /api/history: ✅ HTTP 200, returns 7 scanned products with proper structure 5) GET /api/healing-foods: ✅ HTTP 200, returns exactly 12 healing foods as required 6) GET /api/product/3017620422003: ⚠️ HTTP 500 timeout due to external Open Food Facts API dependency (backend logs confirm 'Error fetching product 3017620422003' indicating external API issue, not implementation problem). CRITICAL FINDING: Premium status recognition feature is working perfectly with proper response structure and accurate premium/non-premium user detection. All requested core endpoints are operational except for product endpoint which has external API dependency issues."
+  - agent: "main"
+    message: "JUNE 2025 - COMPREHENSIVE FIXES IMPLEMENTED: 1) DOUBLE PAYMENT PROTECTION: Added check in /api/create-checkout-session to verify if user is already premium before creating checkout - blocks duplicate subscriptions with clear French error message 2) API CACHE & TIMEOUTS: Implemented TTLCache (5min, 500 products) for /api/product/{barcode} endpoint, increased timeout from 15s to 25s 3) PREMIUM PERSISTENCE: AuthContext now saves/restores both premium status AND test mode via AsyncStorage, auto-refreshes when app comes to foreground 4) RANKINGS IMAGES: Added image_url to HEALTHY_PRODUCTS_FALLBACK for displaying product images in rankings 5) PREMIUM SCREEN UX: Added check on premium.tsx to show 'Already Premium' screen with features list instead of payment form if already subscribed. Please test: POST /api/create-checkout-session with email=meliraoul23@gmail.com should return 400 error since user is already premium."
+  - agent: "testing"
+    message: "🎯 JUNE 2025 BACKEND IMPROVEMENTS TESTING COMPLETE - REVIEW REQUEST FULFILLED: 1) 🔥 CRITICAL: Double Payment Protection - ✅ WORKING PERFECTLY: Premium user (meliraoul23@gmail.com) correctly blocked with HTTP 400 and French error message 'Votre compte est deja Premium!', non-premium user (test@example.com) successfully creates checkout session with HTTP 200 and checkout_url. Protection mechanism fully operational. 2) ⚡ Product Cache & Timeout - ✅ CACHE VERIFIED: TTLCache working correctly with 5-minute TTL, tested with multiple calls to Nutella (3017620422003) - second call 50% faster (0.105s vs 0.192s), additional product (Compotes 3175681851849) also cached successfully. 25-second timeout improvement working. 3) 👑 Premium Status Check - ✅ PERFECT ACCURACY: meliraoul23@gmail.com returns is_premium: true with subscription_type: 'premium', test@example.com returns is_premium: false with subscription_type: 'free'. Both responses contain required boolean and string fields. 4) 🏆 Rankings with Images - ✅ IMAGE_URLS PRESENT: All 9 products in rankings contain image_url field with proper Open Food Facts URLs. COMPREHENSIVE TESTING SHOWS ALL 4 CRITICAL IMPROVEMENTS ARE WORKING FLAWLESSLY. The most important feature (double payment protection) is bulletproof and will prevent duplicate subscriptions."

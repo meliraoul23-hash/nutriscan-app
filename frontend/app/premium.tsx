@@ -1,5 +1,5 @@
 // Premium Subscription Screen
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,21 +18,44 @@ import { createCheckoutSessionAPI } from '../src/services/api';
 import { colors } from '../src/styles/colors';
 
 const FEATURES = [
-  { icon: 'restaurant', name: 'Menu IA personnalisé', desc: 'Un menu hebdomadaire adapté à vos objectifs' },
-  { icon: 'chatbubbles', name: 'Coach IA illimité', desc: 'Posez toutes vos questions nutrition' },
-  { icon: 'cart', name: 'Liste de courses', desc: 'Générée automatiquement avec le menu' },
-  { icon: 'fitness', name: 'Exercices personnalisés', desc: 'Basés sur vos objectifs santé' },
+  { icon: 'restaurant', name: 'Menu IA personnalise', desc: 'Un menu hebdomadaire adapte a vos objectifs' },
+  { icon: 'chatbubbles', name: 'Coach IA illimite', desc: 'Posez toutes vos questions nutrition' },
+  { icon: 'cart', name: 'Liste de courses', desc: 'Generee automatiquement avec le menu' },
+  { icon: 'fitness', name: 'Exercices personnalises', desc: 'Bases sur vos objectifs sante' },
 ];
 
 export default function PremiumScreen() {
   const router = useRouter();
-  const { user, checkPremiumStatus } = useAuth();
+  const { user, checkPremiumStatus, isPremium, forceRefreshPremium } = useAuth();
   const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'yearly'>('monthly');
   const [loading, setLoading] = useState(false);
+  const [checkingStatus, setCheckingStatus] = useState(true);
+
+  // Check premium status on mount
+  useEffect(() => {
+    const checkStatus = async () => {
+      setCheckingStatus(true);
+      await forceRefreshPremium();
+      setCheckingStatus(false);
+    };
+    checkStatus();
+  }, []);
 
   const handleSubscribe = async () => {
     if (!user) {
       router.push('/auth');
+      return;
+    }
+
+    // Double-check premium status before allowing subscription
+    await forceRefreshPremium();
+    
+    if (isPremium) {
+      Alert.alert(
+        'Deja Premium !',
+        'Vous etes deja abonne a NutriScan Premium. Profitez de toutes les fonctionnalites !',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
       return;
     }
 
@@ -55,13 +78,81 @@ export default function PremiumScreen() {
       setTimeout(async () => {
         await checkPremiumStatus();
       }, 5000);
-    } catch (error) {
+    } catch (error: any) {
       console.log('Checkout error:', error);
-      Alert.alert('Erreur', 'Impossible de lancer le paiement. Réessayez.');
+      // Check if error is about already being premium
+      if (error.response?.data?.detail?.includes('deja')) {
+        Alert.alert(
+          'Deja Premium !',
+          error.response.data.detail,
+          [{ text: 'OK', onPress: () => router.back() }]
+        );
+        await forceRefreshPremium();
+      } else {
+        Alert.alert('Erreur', 'Impossible de lancer le paiement. Reessayez.');
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  // If already premium, show success screen
+  if (!checkingStatus && isPremium) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Premium</Text>
+          <View style={{ width: 40 }} />
+        </View>
+
+        <View style={styles.alreadyPremium}>
+          <View style={styles.premiumIconLarge}>
+            <Ionicons name="checkmark-circle" size={80} color={colors.success} />
+          </View>
+          <Text style={styles.alreadyPremiumTitle}>Vous etes Premium !</Text>
+          <Text style={styles.alreadyPremiumText}>
+            Profitez de toutes les fonctionnalites exclusives de NutriScan Premium.
+          </Text>
+          
+          <View style={styles.premiumFeaturesActive}>
+            {FEATURES.map((feature, index) => (
+              <View key={index} style={styles.activeFeatureItem}>
+                <Ionicons name={feature.icon as any} size={20} color={colors.primary} />
+                <Text style={styles.activeFeatureText}>{feature.name}</Text>
+                <Ionicons name="checkmark" size={18} color={colors.success} />
+              </View>
+            ))}
+          </View>
+
+          <TouchableOpacity style={styles.backToHomeButton} onPress={() => router.replace('/(tabs)/home')}>
+            <Text style={styles.backToHomeText}>Retour a l'accueil</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Loading state
+  if (checkingStatus) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Premium</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Verification de votre statut...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -220,4 +311,16 @@ const styles = StyleSheet.create({
   subscribeNote: { textAlign: 'center', fontSize: 12, color: colors.textSecondary, marginTop: 12 },
   guaranteeBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#E8F5E9', padding: 16, borderRadius: 12, marginTop: 20 },
   guaranteeText: { fontSize: 14, color: colors.success, fontWeight: '500', marginLeft: 8 },
+  // Already Premium styles
+  alreadyPremium: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  premiumIconLarge: { marginBottom: 24 },
+  alreadyPremiumTitle: { fontSize: 28, fontWeight: '700', color: colors.text, textAlign: 'center', marginBottom: 12 },
+  alreadyPremiumText: { fontSize: 16, color: colors.textSecondary, textAlign: 'center', lineHeight: 24, marginBottom: 32 },
+  premiumFeaturesActive: { width: '100%', backgroundColor: colors.surface, borderRadius: 16, padding: 16, marginBottom: 24 },
+  activeFeatureItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: colors.background },
+  activeFeatureText: { flex: 1, fontSize: 15, fontWeight: '500', color: colors.text, marginLeft: 12 },
+  backToHomeButton: { backgroundColor: colors.primary, paddingVertical: 16, paddingHorizontal: 40, borderRadius: 12 },
+  backToHomeText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 16, fontSize: 16, color: colors.textSecondary },
 });

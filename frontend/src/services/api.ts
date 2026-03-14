@@ -16,7 +16,7 @@ export const API_URL = getApiUrl();
 // Create axios instance
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 20000,
+  timeout: 30000, // Increased to 30 seconds for reliability
 });
 
 // Product APIs
