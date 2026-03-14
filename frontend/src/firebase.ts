@@ -1,4 +1,5 @@
 // Firebase Configuration for NutriScan
+// Supports: Email/Password, Google Web (redirect), Google Mobile (expo-auth-session)
 import { initializeApp } from 'firebase/app';
 import { 
   initializeAuth,
@@ -8,7 +9,6 @@ import {
   signOut,
   onAuthStateChanged,
   GoogleAuthProvider,
-  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   signInWithCredential,
@@ -19,6 +19,11 @@ import {
 } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+
+// Complete any pending auth sessions
+WebBrowser.maybeCompleteAuthSession();
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -31,16 +36,20 @@ const firebaseConfig = {
   measurementId: "G-1JHME9Z79E"
 };
 
+// Google OAuth Client IDs
+// You need to create these in Google Cloud Console
+const GOOGLE_WEB_CLIENT_ID = "343097974542-XXXXXXX.apps.googleusercontent.com"; // Replace with your web client ID
+const GOOGLE_IOS_CLIENT_ID = "343097974542-XXXXXXX.apps.googleusercontent.com"; // Replace with your iOS client ID  
+const GOOGLE_ANDROID_CLIENT_ID = "343097974542-XXXXXXX.apps.googleusercontent.com"; // Replace with your Android client ID
+
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
 // Initialize Auth with proper persistence for React Native
-let auth;
+let auth: any;
 if (Platform.OS === 'web') {
-  // For web, use default auth
   auth = getAuth(app);
 } else {
-  // For mobile (iOS/Android), use AsyncStorage for persistence
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage)
   });
@@ -48,15 +57,16 @@ if (Platform.OS === 'web') {
 
 const googleProvider = new GoogleAuthProvider();
 
-// Auth functions
+// ============== EMAIL/PASSWORD AUTH ==============
+
 export const firebaseLogin = async (email: string, password: string) => {
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     return { user: userCredential.user, error: null };
   } catch (error: any) {
-    let message = 'Connexion échouée';
+    let message = 'Connexion echouee';
     if (error.code === 'auth/user-not-found') {
-      message = 'Aucun compte trouvé avec cet email';
+      message = 'Aucun compte trouve avec cet email';
     } else if (error.code === 'auth/wrong-password') {
       message = 'Mot de passe incorrect';
     } else if (error.code === 'auth/invalid-email') {
@@ -71,15 +81,14 @@ export const firebaseLogin = async (email: string, password: string) => {
 export const firebaseRegister = async (email: string, password: string, name: string) => {
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-    // Update profile with display name
     await updateProfile(userCredential.user, { displayName: name });
     return { user: userCredential.user, error: null };
   } catch (error: any) {
-    let message = 'Inscription échouée';
+    let message = 'Inscription echouee';
     if (error.code === 'auth/email-already-in-use') {
-      message = 'Cet email est déjà utilisé';
+      message = 'Cet email est deja utilise';
     } else if (error.code === 'auth/weak-password') {
-      message = 'Le mot de passe doit contenir au moins 6 caractères';
+      message = 'Le mot de passe doit contenir au moins 6 caracteres';
     } else if (error.code === 'auth/invalid-email') {
       message = 'Email invalide';
     }
@@ -92,92 +101,101 @@ export const firebaseLogout = async () => {
     await signOut(auth);
     return { success: true, error: null };
   } catch (error: any) {
-    return { success: false, error: 'Erreur lors de la déconnexion' };
+    return { success: false, error: 'Erreur lors de la deconnexion' };
   }
 };
 
-export const firebaseGoogleLogin = async () => {
+// ============== GOOGLE AUTH - WEB (Redirect) ==============
+
+export const firebaseGoogleLoginWeb = async () => {
   try {
-    // Always use web method for now (works in browser and Expo web)
-    console.log('[Google Auth] Starting login with redirect method...');
+    console.log('[Google Auth Web] Starting redirect login...');
     
     googleProvider.setCustomParameters({
       prompt: 'select_account'
     });
     
-    // Store that we're attempting redirect
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('google_auth_redirect', 'pending');
-      }
-    } catch (e) {
-      console.log('[Google Auth] Could not save redirect state');
+    // Store redirect state
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('google_auth_redirect', 'pending');
     }
     
     await signInWithRedirect(auth, googleProvider);
-    
-    // This won't be reached immediately as page redirects
     return { user: null, error: null };
   } catch (error: any) {
-    console.log('[Google Auth] Error:', error.code, error.message);
-    let message = 'Connexion Google echouee';
-    if (error.code === 'auth/popup-closed-by-user') {
-      message = 'Connexion annulee';
-    } else if (error.code === 'auth/popup-blocked') {
-      message = 'Popup bloquee. Essayez de nouveau.';
-    } else if (error.code === 'auth/cancelled-popup-request') {
-      message = 'Connexion annulee';
-    } else if (error.code === 'auth/unauthorized-domain') {
-      message = 'Domaine non autorise dans Firebase. Contactez l\'administrateur.';
-    } else if (error.code === 'auth/operation-not-allowed') {
-      message = 'La connexion Google n\'est pas activee dans Firebase';
-    } else if (error.message) {
-      message = error.message;
-    }
-    return { user: null, error: message };
+    console.log('[Google Auth Web] Error:', error.code, error.message);
+    return { user: null, error: getGoogleErrorMessage(error) };
   }
 };
 
-// Check for redirect result on page load
+// Check redirect result on page load (Web only)
 export const checkGoogleRedirectResult = async () => {
+  if (Platform.OS !== 'web') return { user: null, error: null };
+  
   try {
-    // Check if we have a pending redirect
-    let pendingRedirect = null;
-    try {
-      pendingRedirect = await AsyncStorage.getItem('google_auth_redirect');
-    } catch (e) {
-      if (typeof localStorage !== 'undefined') {
-        pendingRedirect = localStorage.getItem('google_auth_redirect');
-      }
-    }
-    
-    console.log('[Google Auth] Checking redirect result, pending:', pendingRedirect);
-    
-    // Always check for redirect result (Firebase handles the state)
+    console.log('[Google Auth Web] Checking redirect result...');
     const result = await getRedirectResult(auth);
     
-    // Clear the pending flag
-    try {
-      await AsyncStorage.removeItem('google_auth_redirect');
-    } catch (e) {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem('google_auth_redirect');
-      }
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('google_auth_redirect');
     }
     
     if (result?.user) {
-      console.log('[Google Auth] Redirect success:', result.user.email);
+      console.log('[Google Auth Web] Redirect success:', result.user.email);
       return { user: result.user, error: null };
     }
-    
-    console.log('[Google Auth] No redirect result found');
   } catch (error: any) {
-    console.log('[Google Auth] Redirect result error:', error.code, error.message);
+    console.log('[Google Auth Web] Redirect error:', error.code);
   }
   return { user: null, error: null };
 };
 
-// Password Reset
+// ============== GOOGLE AUTH - MOBILE (expo-auth-session) ==============
+
+// Hook to use in components for mobile Google auth
+export const useGoogleAuth = () => {
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    iosClientId: GOOGLE_IOS_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+  });
+
+  return { request, response, promptAsync };
+};
+
+// Sign in with Google ID token (from expo-auth-session)
+export const firebaseGoogleLoginWithToken = async (idToken: string) => {
+  try {
+    console.log('[Google Auth Mobile] Signing in with ID token...');
+    const credential = GoogleAuthProvider.credential(idToken);
+    const userCredential = await signInWithCredential(auth, credential);
+    console.log('[Google Auth Mobile] Success:', userCredential.user.email);
+    return { user: userCredential.user, error: null };
+  } catch (error: any) {
+    console.log('[Google Auth Mobile] Error:', error.code, error.message);
+    return { user: null, error: getGoogleErrorMessage(error) };
+  }
+};
+
+// ============== UNIFIED GOOGLE LOGIN ==============
+
+// Main Google login function - automatically chooses the right method
+export const firebaseGoogleLogin = async () => {
+  if (Platform.OS === 'web') {
+    return firebaseGoogleLoginWeb();
+  } else {
+    // For mobile, return info that promptAsync should be used
+    return { 
+      user: null, 
+      error: null,
+      useNativeAuth: true,
+      message: 'Utilisez le bouton Google natif sur mobile'
+    };
+  }
+};
+
+// ============== PASSWORD RESET ==============
+
 export const firebaseResetPassword = async (email: string) => {
   try {
     await sendPasswordResetEmail(auth, email);
@@ -185,12 +203,26 @@ export const firebaseResetPassword = async (email: string) => {
   } catch (error: any) {
     let message = 'Erreur lors de l\'envoi';
     if (error.code === 'auth/user-not-found') {
-      message = 'Aucun compte trouvé avec cet email';
+      message = 'Aucun compte trouve avec cet email';
     } else if (error.code === 'auth/invalid-email') {
       message = 'Email invalide';
     }
     return { success: false, error: message };
   }
+};
+
+// ============== HELPERS ==============
+
+const getGoogleErrorMessage = (error: any) => {
+  const errorMessages: Record<string, string> = {
+    'auth/popup-closed-by-user': 'Connexion annulee',
+    'auth/popup-blocked': 'Popup bloquee. Essayez de nouveau.',
+    'auth/cancelled-popup-request': 'Connexion annulee',
+    'auth/unauthorized-domain': 'Domaine non autorise dans Firebase.',
+    'auth/operation-not-allowed': 'La connexion Google n\'est pas activee',
+    'auth/account-exists-with-different-credential': 'Un compte existe deja avec cet email'
+  };
+  return errorMessages[error.code] || error.message || 'Connexion Google echouee';
 };
 
 // Auth state listener
@@ -208,8 +240,7 @@ export const getIdToken = async () => {
   const currentUser = auth.currentUser;
   if (currentUser) {
     try {
-      const token = await currentUser.getIdToken();
-      return token;
+      return await currentUser.getIdToken();
     } catch (error) {
       console.log('Error getting ID token:', error);
       return null;
@@ -225,7 +256,7 @@ export const formatUser = (firebaseUser: User) => {
     email: firebaseUser.email || '',
     name: firebaseUser.displayName || 'Utilisateur',
     picture: firebaseUser.photoURL || null,
-    subscription_type: 'free' // Default, will be updated from backend
+    subscription_type: 'free'
   };
 };
 

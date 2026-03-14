@@ -9,6 +9,7 @@ import {
   firebaseRegister,
   firebaseLogout,
   firebaseGoogleLogin,
+  firebaseGoogleLoginWeb,
   firebaseResetPassword,
   onAuthStateChange,
   formatUser,
@@ -181,20 +182,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loginWithGoogle = async () => {
     try {
-      const { user: firebaseUser, error } = await firebaseGoogleLogin();
-      if (error) {
-        if (error === 'Connexion annulée') return { success: false };
-        return { success: false, error };
+      // For web, use redirect method
+      const result = await firebaseGoogleLoginWeb();
+      if (result.error) {
+        return { success: false, error: result.error };
       }
-      if (firebaseUser) {
-        const appUser = formatUser(firebaseUser);
-        const premiumStatus = await checkPremiumStatusAPI(appUser.email);
-        appUser.subscription_type = premiumStatus;
-        await AsyncStorage.setItem('auth_user', JSON.stringify(appUser));
-        setUser(appUser);
-        return { success: true };
-      }
-      return { success: false, error: 'Connexion Google échouée' };
+      // For redirect, the page will reload, so we return success=false but no error
+      // The user will be logged in after redirect via onAuthStateChange
+      return { success: false };
     } catch (error: any) {
       return { success: false, error: 'Erreur lors de la connexion Google' };
     }

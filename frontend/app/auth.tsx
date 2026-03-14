@@ -1,5 +1,8 @@
-// Auth Screen
-import React, { useState } from 'react';
+// Auth Screen with 3 Google Login Methods
+// 1. Email/Password - Works everywhere
+// 2. Google Web (redirect) - Works on web browsers
+// 3. Google Mobile (expo-auth-session) - Works on Expo Go/native apps
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,10 +19,19 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../src/contexts/AuthContext';
 import { colors } from '../src/styles/colors';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import { firebaseGoogleLoginWithToken } from '../src/firebase';
+
+// Complete auth session for web
+WebBrowser.maybeCompleteAuthSession();
+
+// Google OAuth Client IDs - Using Expo's proxy for Expo Go
+const EXPO_CLIENT_ID = "343097974542-PLACEHOLDER.apps.googleusercontent.com";
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { login, register, loginWithGoogle, resetPassword } = useAuth();
+  const { login, register, loginWithGoogle, resetPassword, setUserFromFirebase } = useAuth();
   
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
   const [email, setEmail] = useState('');
@@ -28,6 +40,55 @@ export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  // Google Auth for Mobile using Expo's proxy
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    expoClientId: EXPO_CLIENT_ID,
+    webClientId: "343097974542-PLACEHOLDER.apps.googleusercontent.com",
+    selectAccount: true,
+  });
+
+  // Handle Google auth response for mobile
+  useEffect(() => {
+    const handleGoogleResponse = async () => {
+      if (response?.type === 'success') {
+        console.log('[Google Mobile] Auth success, getting token...');
+        setLoading(true);
+        setError('');
+        
+        try {
+          const { id_token } = response.params;
+          
+          if (id_token) {
+            // Sign in to Firebase with the Google ID token
+            const result = await firebaseGoogleLoginWithToken(id_token);
+            
+            if (result.user) {
+              console.log('[Google Mobile] Firebase login success:', result.user.email);
+              // Let AuthContext handle the user via onAuthStateChange
+              router.back();
+            } else if (result.error) {
+              setError(result.error);
+            }
+          } else {
+            setError('Token non recu de Google');
+          }
+        } catch (err) {
+          console.log('[Google Mobile] Error:', err);
+          setError('Erreur de connexion Google');
+        } finally {
+          setLoading(false);
+        }
+      } else if (response?.type === 'error') {
+        console.log('[Google Mobile] Auth error:', response.error);
+        setError('Connexion Google annulee');
+      }
+    };
+
+    if (response) {
+      handleGoogleResponse();
+    }
+  }, [response]);
 
   const handleSubmit = async () => {
     setError('');
@@ -52,7 +113,7 @@ export default function AuthScreen() {
       } else if (mode === 'reset') {
         const result = await resetPassword(email);
         if (result.success) {
-          setSuccess('Email de réinitialisation envoyé !');
+          setSuccess('Email de reinitialisation envoye !');
           setMode('login');
         } else {
           setError(result.error || 'Erreur');
@@ -68,21 +129,32 @@ export default function AuthScreen() {
   const handleGoogleLogin = async () => {
     setError('');
     setLoading(true);
-    console.log('[Auth Screen] Starting Google login...');
+    console.log('[Auth Screen] Starting Google login, Platform:', Platform.OS);
+    
     try {
-      const result = await loginWithGoogle();
-      console.log('[Auth Screen] Google login result:', result);
-      if (result.success) {
-        console.log('[Auth Screen] Google login successful, navigating back...');
-        router.back();
-      } else if (result.error) {
-        console.log('[Auth Screen] Google login error:', result.error);
-        setError(result.error);
+      if (Platform.OS === 'web') {
+        // Web: Use Firebase redirect
+        console.log('[Auth Screen] Using web redirect method...');
+        const result = await loginWithGoogle();
+        if (result.error) {
+          setError(result.error);
+          setLoading(false);
+        }
+        // For redirect, page will reload, so we don't need to handle success here
+      } else {
+        // Mobile: Use expo-auth-session
+        console.log('[Auth Screen] Using mobile native method...');
+        if (request) {
+          await promptAsync();
+          // Response will be handled by useEffect above
+        } else {
+          setError('Configuration Google non disponible. Utilisez email/mot de passe.');
+          setLoading(false);
+        }
       }
     } catch (err: any) {
       console.log('[Auth Screen] Google login exception:', err);
       setError(err.message || 'Erreur Google');
-    } finally {
       setLoading(false);
     }
   };
@@ -100,14 +172,14 @@ export default function AuthScreen() {
               <Ionicons name="leaf" size={48} color={colors.primary} />
             </View>
             <Text style={styles.title}>
-              {mode === 'login' ? 'Connexion' : mode === 'register' ? 'Inscription' : 'Réinitialisation'}
+              {mode === 'login' ? 'Connexion' : mode === 'register' ? 'Inscription' : 'Reinitialisation'}
             </Text>
             <Text style={styles.subtitle}>
               {mode === 'login'
-                ? 'Connectez-vous à votre compte'
+                ? 'Connectez-vous a votre compte'
                 : mode === 'register'
-                ? 'Créez votre compte NutriScan'
-                : 'Entrez votre email pour réinitialiser'}
+                ? 'Creez votre compte NutriScan'
+                : 'Entrez votre email pour reinitialiser'}
             </Text>
           </View>
 
@@ -135,6 +207,7 @@ export default function AuthScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Votre nom"
+                    placeholderTextColor={colors.textSecondary}
                     value={name}
                     onChangeText={setName}
                     autoCapitalize="words"
@@ -150,6 +223,7 @@ export default function AuthScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="votre@email.com"
+                  placeholderTextColor={colors.textSecondary}
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -166,6 +240,7 @@ export default function AuthScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="••••••••"
+                    placeholderTextColor={colors.textSecondary}
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
@@ -176,7 +251,7 @@ export default function AuthScreen() {
 
             {mode === 'login' && (
               <TouchableOpacity style={styles.forgotPassword} onPress={() => setMode('reset')}>
-                <Text style={styles.forgotPasswordText}>Mot de passe oublié ?</Text>
+                <Text style={styles.forgotPasswordText}>Mot de passe oublie ?</Text>
               </TouchableOpacity>
             )}
 
@@ -202,10 +277,27 @@ export default function AuthScreen() {
                   <View style={styles.dividerLine} />
                 </View>
 
-                <TouchableOpacity style={styles.googleButton} onPress={handleGoogleLogin} disabled={loading}>
-                  <Ionicons name="logo-google" size={20} color="#FFF" />
-                  <Text style={styles.googleButtonText}>Continuer avec Google</Text>
+                <TouchableOpacity 
+                  style={[styles.googleButton, loading && styles.googleButtonDisabled]} 
+                  onPress={handleGoogleLogin} 
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="logo-google" size={20} color="#FFF" />
+                      <Text style={styles.googleButtonText}>Continuer avec Google</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
+
+                {/* Info about auth method */}
+                <Text style={styles.authInfo}>
+                  {Platform.OS === 'web' 
+                    ? 'Connexion via redirection Google' 
+                    : 'Connexion native Google'}
+                </Text>
               </>
             )}
 
@@ -218,7 +310,7 @@ export default function AuthScreen() {
               }}
             >
               <Text style={styles.switchModeText}>
-                {mode === 'login' ? 'Pas de compte ? S\'inscrire' : 'Déjà un compte ? Se connecter'}
+                {mode === 'login' ? 'Pas de compte ? S\'inscrire' : 'Deja un compte ? Se connecter'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -250,8 +342,10 @@ const styles = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', marginVertical: 24 },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.surface },
   dividerText: { color: colors.textSecondary, paddingHorizontal: 16, fontSize: 14 },
-  googleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4285F4', paddingVertical: 14, borderRadius: 12 },
+  googleButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4285F4', paddingVertical: 14, borderRadius: 12, minHeight: 52 },
+  googleButtonDisabled: { opacity: 0.7 },
   googleButtonText: { color: '#FFF', fontSize: 16, fontWeight: '500', marginLeft: 8 },
+  authInfo: { textAlign: 'center', fontSize: 12, color: colors.textSecondary, marginTop: 8 },
   switchMode: { alignItems: 'center', marginTop: 24 },
   switchModeText: { color: colors.primary, fontSize: 14 },
   errorContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFEBEE', padding: 12, borderRadius: 8, marginBottom: 12 },
