@@ -8,21 +8,42 @@
     "scheme": "nutriscan",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4CAF50"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nutriscan.app",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "Scan food barcodes to analyze nutrition"
+        "NSCameraUsageDescription": "Scannez les codes-barres pour analyser la nutrition",
+        "NSMicrophoneUsageDescription": "Commandes vocales en mode cuisine",
+        "NSSpeechRecognitionUsageDescription": "Reconnaissance vocale pour naviguer les recettes",
+        "NSPhotoLibraryUsageDescription": "Sauvegarder vos recettes favorites",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#4CAF50"
       },
       "package": "com.nutriscan.app",
+      "versionCode": 1,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.INTERNET",
+        "android.permission.VIBRATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -35,15 +56,33 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow NutriScan to access your camera to scan product barcodes."
+          "cameraPermission": "NutriScan utilise la camera pour scanner les codes-barres alimentaires."
         }
       ],
       "expo-web-browser",
       "expo-video",
-      "expo-speech-recognition"
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "NutriScan utilise le micro pour les commandes vocales en mode cuisine."
+        }
+      ],
+      "expo-screen-orientation"
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "your-project-id"
+      }
+    },
+    "owner": "your-expo-username",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/your-project-id"
     }
   }
 }
