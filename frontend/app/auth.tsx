@@ -99,6 +99,8 @@ export default function AuthScreen() {
       if (mode === 'login') {
         const result = await login(email, password);
         if (result.success) {
+          // Small delay to ensure auth state is fully propagated before navigation
+          await new Promise(resolve => setTimeout(resolve, 300));
           // Navigate to home instead of going back to prevent white screen
           router.replace('/(tabs)/home');
         } else {
@@ -107,6 +109,8 @@ export default function AuthScreen() {
       } else if (mode === 'register') {
         const result = await register(email, password, name);
         if (result.success) {
+          // Small delay to ensure auth state is fully propagated before navigation
+          await new Promise(resolve => setTimeout(resolve, 300));
           // Navigate to home instead of going back to prevent white screen
           router.replace('/(tabs)/home');
         } else {
