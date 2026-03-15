@@ -65,8 +65,8 @@ export default function AuthScreen() {
             
             if (result.user) {
               console.log('[Google Mobile] Firebase login success:', result.user.email);
-              // Let AuthContext handle the user via onAuthStateChange
-              router.back();
+              // Navigate to home instead of going back to prevent white screen
+              router.replace('/(tabs)/home');
             } else if (result.error) {
               setError(result.error);
             }
@@ -99,14 +99,16 @@ export default function AuthScreen() {
       if (mode === 'login') {
         const result = await login(email, password);
         if (result.success) {
-          router.back();
+          // Navigate to home instead of going back to prevent white screen
+          router.replace('/(tabs)/home');
         } else {
           setError(result.error || 'Erreur de connexion');
         }
       } else if (mode === 'register') {
         const result = await register(email, password, name);
         if (result.success) {
-          router.back();
+          // Navigate to home instead of going back to prevent white screen
+          router.replace('/(tabs)/home');
         } else {
           setError(result.error || 'Erreur d\'inscription');
         }
