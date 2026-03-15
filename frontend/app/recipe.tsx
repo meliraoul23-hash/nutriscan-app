@@ -44,12 +44,13 @@ const HEADER_MAX_HEIGHT = 300;
 const HEADER_MIN_HEIGHT = 100;
 const HEADER_SCROLL_DISTANCE = HEADER_MAX_HEIGHT - HEADER_MIN_HEIGHT;
 
-// Real cooking video URLs from Mixkit (free stock videos)
+// Video URLs disabled - Mixkit returns 403 errors
+// To enable videos, host them on YouTube, Vimeo, or Cloudinary and update these URLs
 const RECIPE_VIDEOS = {
-  main: 'https://assets.mixkit.co/videos/preview/mixkit-woman-mixing-vegetables-in-a-bowl-43299-large.mp4',
-  step1: 'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-woman-seasoning-a-salad-43300-large.mp4',
-  step2: 'https://assets.mixkit.co/videos/preview/mixkit-hands-cutting-a-carrot-on-a-cutting-board-43298-large.mp4',
-  step3: 'https://assets.mixkit.co/videos/preview/mixkit-woman-pouring-olive-oil-on-a-salad-43297-large.mp4',
+  main: '',
+  step1: '',
+  step2: '',
+  step3: '',
 };
 
 // Mock recipe data
@@ -58,7 +59,7 @@ const MOCK_RECIPE = {
   title: 'Buddha Bowl Mediterraneen',
   subtitle: 'Bowl equilibre aux saveurs du sud',
   heroImage: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800',
-  videoUrl: RECIPE_VIDEOS.main,
+  videoUrl: '', // Disabled - no working free video URLs available
   duration: '35 min',
   difficulty: 'Facile',
   servings: 2,
@@ -1242,24 +1243,26 @@ export default function RecipeDetailScreen() {
       >
         <View style={{ height: HEADER_MAX_HEIGHT }} />
 
-        {/* Main Video Section */}
-        <View style={styles.mainVideoSection}>
-          <Text style={styles.videoSectionTitle}>Tutoriel Video</Text>
-          <TouchableOpacity 
-            style={styles.mainVideoCard}
-            onPress={() => setShowMainVideo(true)}
-            activeOpacity={0.9}
-          >
-            <Image source={{ uri: recipe.heroImage }} style={styles.mainVideoThumbnail} />
-            <View style={styles.mainVideoOverlay}>
-              <View style={styles.mainVideoPlayBtn}>
-                <Ionicons name="play" size={40} color="#FFF" />
+        {/* Main Video Section - Only show if video URL exists */}
+        {recipe.videoUrl && recipe.videoUrl.length > 0 ? (
+          <View style={styles.mainVideoSection}>
+            <Text style={styles.videoSectionTitle}>Tutoriel Video</Text>
+            <TouchableOpacity 
+              style={styles.mainVideoCard}
+              onPress={() => setShowMainVideo(true)}
+              activeOpacity={0.9}
+            >
+              <Image source={{ uri: recipe.heroImage }} style={styles.mainVideoThumbnail} />
+              <View style={styles.mainVideoOverlay}>
+                <View style={styles.mainVideoPlayBtn}>
+                  <Ionicons name="play" size={40} color="#FFF" />
+                </View>
+                <Text style={styles.mainVideoTitle}>Voir la recette complete</Text>
+                <Text style={styles.mainVideoDuration}>Tutorial - 2 min</Text>
               </View>
-              <Text style={styles.mainVideoTitle}>Voir la recette complete</Text>
-              <Text style={styles.mainVideoDuration}>Tutorial - 2 min</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Recipe Info Bar */}
         <View style={styles.infoBar}>

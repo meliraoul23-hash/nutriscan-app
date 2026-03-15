@@ -2652,7 +2652,7 @@ PREMIUM_RECIPES = [
         "title": "Buddha Bowl Mediterraneen",
         "subtitle": "Bowl equilibre aux saveurs du sud",
         "heroImage": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800",
-        "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-woman-mixing-vegetables-in-a-bowl-43299-large.mp4",
+        "videoUrl": "",
         "prepTime": 15,
         "totalTime": 35,
         "servings": 2,
@@ -2679,8 +2679,7 @@ PREMIUM_RECIPES = [
                 "description": "Rincez le quinoa sous l'eau froide. Faites cuire dans 2 volumes d'eau salee pendant 15 minutes.",
                 "duration": 15,
                 "image": "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=400",
-                "tip": "Le quinoa est pret quand les grains sont translucides.",
-                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-woman-seasoning-a-salad-43300-large.mp4"
+                "tip": "Le quinoa est pret quand les grains sont translucides."
             },
             {
                 "id": "step2",
@@ -2688,8 +2687,7 @@ PREMIUM_RECIPES = [
                 "description": "Coupez les tomates cerises en deux. Detaillez le concombre en rondelles. Emincez l'avocat.",
                 "duration": 5,
                 "image": "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=400",
-                "tip": "Arrosez l'avocat de citron pour eviter qu'il ne s'oxyde.",
-                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-hands-cutting-a-carrot-on-a-cutting-board-43298-large.mp4"
+                "tip": "Arrosez l'avocat de citron pour eviter qu'il ne s'oxyde."
             },
             {
                 "id": "step3",
@@ -2697,7 +2695,7 @@ PREMIUM_RECIPES = [
                 "description": "Egouttez les pois chiches. Faites-les rotir a la poele avec un filet d'huile d'olive pendant 8 minutes.",
                 "duration": 8,
                 "image": "https://images.unsplash.com/photo-1515543237350-b3eea1ec8082?w=400",
-                "tip": "Les pois chiches doivent etre dores et croustillants.",
+                "tip": "Les pois chiches doivent etre dores et croustillants."
             },
             {
                 "id": "step4",
@@ -2705,8 +2703,7 @@ PREMIUM_RECIPES = [
                 "description": "Disposez le quinoa au fond du bowl. Ajoutez les legumes, les pois chiches et la feta. Arrosez d'huile d'olive et de jus de citron.",
                 "duration": 3,
                 "image": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=400",
-                "tip": "Salez et poivrez selon votre gout.",
-                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-woman-pouring-olive-oil-on-a-salad-43297-large.mp4"
+                "tip": "Salez et poivrez selon votre gout."
             }
         ],
         "author": "Chef NutriScan",
@@ -2718,7 +2715,7 @@ PREMIUM_RECIPES = [
         "title": "Saumon Teriyaki",
         "subtitle": "Filet de saumon glace aux saveurs japonaises",
         "heroImage": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800",
-        "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-person-cooking-on-a-pan-with-fire-1137-large.mp4",
+        "videoUrl": "",
         "prepTime": 10,
         "totalTime": 25,
         "servings": 2,
@@ -2734,7 +2731,7 @@ PREMIUM_RECIPES = [
             {"id": "3", "name": "Miel", "quantity": 30, "unit": "ml", "category": "Sucres"},
             {"id": "4", "name": "Riz basmati", "quantity": 200, "unit": "g", "category": "Cereales"},
             {"id": "5", "name": "Brocoli", "quantity": 200, "unit": "g", "category": "Legumes"},
-            {"id": "6", "name": "Graines de sesame", "quantity": 10, "unit": "g", "category": "Graines"},
+            {"id": "6", "name": "Graines de sesame", "quantity": 10, "unit": "g", "category": "Graines"}
         ],
         "steps": [
             {
@@ -2742,14 +2739,14 @@ PREMIUM_RECIPES = [
                 "title": "Preparer la sauce teriyaki",
                 "description": "Melangez la sauce soja et le miel dans un bol. Reservez la moitie pour le glacage.",
                 "duration": 2,
-                "image": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400",
+                "image": "https://images.unsplash.com/photo-1585937421612-70a008356fbe?w=400"
             },
             {
                 "id": "step2",
                 "title": "Cuire le riz",
                 "description": "Rincez le riz et faites-le cuire selon les instructions du paquet pendant 12 minutes.",
                 "duration": 12,
-                "image": "https://images.unsplash.com/photo-1516684732162-798a0062be99?w=400",
+                "image": "https://images.unsplash.com/photo-1516684732162-798a0062be99?w=400"
             },
             {
                 "id": "step3",
@@ -2757,15 +2754,14 @@ PREMIUM_RECIPES = [
                 "description": "Faites chauffer une poele. Saisissez les filets de saumon 4 minutes de chaque cote en les badigeonnant de sauce.",
                 "duration": 8,
                 "image": "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?w=400",
-                "tip": "Ne retournez le saumon qu'une seule fois pour une belle croute.",
-                "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-person-cooking-on-a-pan-with-fire-1137-large.mp4"
+                "tip": "Ne retournez le saumon qu'une seule fois pour une belle croute."
             },
             {
                 "id": "step4",
                 "title": "Servir",
                 "description": "Disposez le riz et le brocoli dans les assiettes. Ajoutez le saumon, nappez de sauce et parsemez de sesame.",
                 "duration": 3,
-                "image": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=400",
+                "image": "https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=400"
             }
         ],
         "author": "Chef NutriScan",
@@ -2777,7 +2773,7 @@ PREMIUM_RECIPES = [
         "title": "Smoothie Bowl Tropical",
         "subtitle": "Petit-dejeuner vitamine et colore",
         "heroImage": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=800",
-        "videoUrl": "https://assets.mixkit.co/videos/preview/mixkit-pouring-milk-into-a-cup-of-coffee-725-large.mp4",
+        "videoUrl": "",
         "prepTime": 10,
         "totalTime": 10,
         "servings": 1,
@@ -2793,7 +2789,7 @@ PREMIUM_RECIPES = [
             {"id": "3", "name": "Lait de coco", "quantity": 150, "unit": "ml", "category": "Boissons"},
             {"id": "4", "name": "Granola", "quantity": 30, "unit": "g", "category": "Cereales"},
             {"id": "5", "name": "Fruits rouges", "quantity": 50, "unit": "g", "category": "Fruits"},
-            {"id": "6", "name": "Noix de coco rapee", "quantity": 10, "unit": "g", "category": "Noix"},
+            {"id": "6", "name": "Noix de coco rapee", "quantity": 10, "unit": "g", "category": "Noix"}
         ],
         "steps": [
             {
@@ -2802,14 +2798,14 @@ PREMIUM_RECIPES = [
                 "description": "Placez la banane congelee, la mangue et le lait de coco dans un blender. Mixez pendant 2 minutes jusqu'a obtenir une texture epaisse.",
                 "duration": 2,
                 "image": "https://images.unsplash.com/photo-1638176066666-ffb2f013c7dd?w=400",
-                "tip": "Ajoutez moins de lait pour une texture plus epaisse.",
+                "tip": "Ajoutez moins de lait pour une texture plus epaisse."
             },
             {
                 "id": "step2",
                 "title": "Dresser le bowl",
                 "description": "Versez le smoothie dans un bol. Ajoutez le granola, les fruits rouges et la noix de coco rapee en decoration.",
                 "duration": 3,
-                "image": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=400",
+                "image": "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=400"
             }
         ],
         "author": "Chef NutriScan",
