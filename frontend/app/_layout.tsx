@@ -40,7 +40,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="scanner" options={{ headerShown: false, presentation: 'fullScreenModal' }} />
             <Stack.Screen name="product" options={{ headerShown: false }} />
-            <Stack.Screen name="auth" options={{ headerShown: false, presentation: 'modal' }} />
+            <Stack.Screen name="auth" options={{ headerShown: false }} />
             <Stack.Screen name="premium" options={{ headerShown: false, presentation: 'modal' }} />
             <Stack.Screen name="premium-onboarding" options={{ headerShown: false }} />
             <Stack.Screen name="progress" options={{ headerShown: false }} />

@@ -31,7 +31,7 @@ const EXPO_CLIENT_ID = "343097974542-PLACEHOLDER.apps.googleusercontent.com";
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { login, register, loginWithGoogle, resetPassword, setUserFromFirebase } = useAuth();
+  const { login, register, loginWithGoogle, resetPassword } = useAuth();
   
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login');
   const [email, setEmail] = useState('');
@@ -97,22 +97,32 @@ export default function AuthScreen() {
 
     try {
       if (mode === 'login') {
+        console.log('[Auth] Attempting login for:', email);
         const result = await login(email, password);
+        console.log('[Auth] Login result:', result.success);
         if (result.success) {
+          // Keep loading true during navigation to prevent white screen
+          console.log('[Auth] Login success, navigating to home...');
           // Small delay to ensure auth state is fully propagated before navigation
-          await new Promise(resolve => setTimeout(resolve, 300));
-          // Navigate to home instead of going back to prevent white screen
+          await new Promise(resolve => setTimeout(resolve, 500));
+          // Navigate to home - don't set loading to false here
           router.replace('/(tabs)/home');
+          return; // Exit early, don't set loading to false
         } else {
           setError(result.error || 'Erreur de connexion');
         }
       } else if (mode === 'register') {
+        console.log('[Auth] Attempting registration for:', email);
         const result = await register(email, password, name);
+        console.log('[Auth] Registration result:', result.success);
         if (result.success) {
+          // Keep loading true during navigation to prevent white screen
+          console.log('[Auth] Registration success, navigating to home...');
           // Small delay to ensure auth state is fully propagated before navigation
-          await new Promise(resolve => setTimeout(resolve, 300));
-          // Navigate to home instead of going back to prevent white screen
+          await new Promise(resolve => setTimeout(resolve, 500));
+          // Navigate to home - don't set loading to false here
           router.replace('/(tabs)/home');
+          return; // Exit early, don't set loading to false
         } else {
           setError(result.error || 'Erreur d\'inscription');
         }
@@ -126,10 +136,11 @@ export default function AuthScreen() {
         }
       }
     } catch (err: any) {
+      console.log('[Auth] Error:', err);
       setError(err.message || 'Une erreur est survenue');
-    } finally {
-      setLoading(false);
     }
+    // Only set loading to false if we haven't navigated away
+    setLoading(false);
   };
 
   const handleGoogleLogin = async () => {
